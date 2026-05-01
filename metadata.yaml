@@ -1,0 +1,5 @@
+name: astrbot_plugin_openai_image
+display_name: OpenAI 图片生成
+author: Codex
+version: 0.2.0
+description: 基于 OpenAI 兼容 chat/completions 接口的 AstrBot 图片生成与图片编辑插件，支持缓存、并发限制与 OneBot v11 回传。

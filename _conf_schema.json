@@ -1,0 +1,82 @@
+{
+    "base_url": {
+        "description": "图片接口基础地址",
+        "type": "string",
+        "default": "https://cdn.jucode.top/v1",
+        "hint": "这里只填写站点 Base URL，例如 https://cdn.jucode.top/v1。插件会按端点类型自动补全 /responses、/images/generations 或 /images/edits。"
+    },
+    "api_key": {
+        "description": "图片接口 API Key",
+        "type": "string",
+        "default": "",
+        "hint": "将以 Bearer Token 方式附带到图片接口请求头中。"
+    },
+    "model": {
+        "description": "图片模型名称",
+        "type": "string",
+        "default": "",
+        "hint": "留空时自动按端点类型选择默认模型：responses 使用 gpt-5.4-mini，images 使用 gpt-image-2。"
+    },
+    "endpoint_type": {
+        "description": "图片接口端点类型",
+        "type": "string",
+        "default": "responses",
+        "options": [
+            "responses",
+            "images"
+        ],
+        "hint": "responses 使用 /v1/responses；images 文生图使用 /v1/images/generations，图片编辑使用 /v1/images/edits。"
+    },
+    "negative_prompt": {
+        "description": "负面提示词",
+        "type": "string",
+        "default": "",
+        "hint": "可填写不希望出现在图片中的内容，例如低清晰度、文字水印、畸形手等。留空时不会修改原始提示词。"
+    },
+    "image_size": {
+        "description": "默认输出图片尺寸",
+        "type": "string",
+        "default": "",
+        "hint": "留空时使用接口默认尺寸；可填写 auto、square、portrait、landscape 或 1024x1024 这类宽高格式。命令中的 --size 或 -s 会临时覆盖此配置。"
+    },
+    "image_send_mode": {
+        "description": "图片发送模式",
+        "type": "string",
+        "default": "base64",
+        "options": [
+            "base64",
+            "url"
+        ],
+        "hint": "base64 保持旧行为；url 会通过 AstrBot 文件服务生成 HTTP 图片链接并直接发给 NapCat，适合降低 4K 图片发送时的 NapCat 内存峰值。"
+    },
+    "image_send_url_base": {
+        "description": "图片 URL 发送基础地址",
+        "type": "string",
+        "default": "",
+        "hint": "仅 image_send_mode=url 时生效。留空时使用 AstrBot 全局 callback_api_base；两个容器分离时请填写 NapCat 容器可访问的 AstrBot 地址，例如 http://astrbot:6185。"
+    },
+    "request_timeout_seconds": {
+        "description": "图片请求超时秒数",
+        "type": "int",
+        "default": 180,
+        "hint": "图片接口的单次请求总超时。"
+    },
+    "max_concurrency": {
+        "description": "最大并发任务数",
+        "type": "int",
+        "default": 2,
+        "hint": "插件内部同一时刻允许执行的最大图片任务数。"
+    },
+    "multi_image_command_admin_only": {
+        "description": "命令多图仅限 Bot 管理员",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后，普通用户通过 /oaiimg、/oaiedit、/oaiqlogo 指定数量大于 1 时会被拒绝；这里的管理员指 AstrBot 的 Bot 管理员，不是 QQ 群管理员。"
+    },
+    "max_cache_images": {
+        "description": "最大缓存图片数量",
+        "type": "int",
+        "default": 50,
+        "hint": "超过数量后会自动清理最旧缓存。"
+    }
+}
