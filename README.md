@@ -9,7 +9,7 @@
 - 可在配置中选择 `responses` 或 `images` 端点，`images` 模式支持 `/images/generations` 与 `/images/edits`
 - 支持配置全局负面提示词，并自动追加到生成与编辑请求中
 - 支持配置默认输出尺寸，也可通过命令参数临时覆盖
-- 默认仅 Bot 管理员可通过命令一次生成或编辑多张图片，可在配置中关闭限制
+- 默认仅 Bot 管理员可通过命令参数控制数量、尺寸、质量和审核，可在配置中关闭限制
 - 结果缓存到 `data/plugin_data/astrbot_plugin_openai_image/images`
 - 仅支持通过 OneBot v11 回传 QQ 图片消息
 - 提供两个函数工具：

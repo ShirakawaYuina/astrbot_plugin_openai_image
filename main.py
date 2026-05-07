@@ -20,6 +20,7 @@ from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
 from .core.commands import normalize_output_size, parse_command_payload
 from .core.gateways.openai_image_gateway import OpenAIImageGateway
+from .core.models import ParsedCommand
 from .core.presenters.result_presenter import ResultPresenter
 from .core.services.image_edit_service import ImageEditService
 from .core.services.image_generate_service import ImageGenerateService
@@ -208,15 +209,9 @@ class OpenAIImagePlugin(Star):
         """处理 `/oaiimg` 命令的完整流程。"""
 
         try:
-            parsed_command = parse_command_payload(raw_prompt)
+            parsed_command = self._parse_command_payload_for_event(event, raw_prompt)
         except ValueError as exc:
             await event.send(event.plain_result(f"参数错误：{exc}"))
-            return
-
-        if not await self._ensure_multi_image_command_allowed(
-            event,
-            count=parsed_command.count,
-        ):
             return
 
         await self._send_pending_message(
@@ -241,15 +236,9 @@ class OpenAIImagePlugin(Star):
         """处理 `/oaiedit` 命令的完整流程。"""
 
         try:
-            parsed_command = parse_command_payload(raw_prompt)
+            parsed_command = self._parse_command_payload_for_event(event, raw_prompt)
         except ValueError as exc:
             await event.send(event.plain_result(f"参数错误：{exc}"))
-            return
-
-        if not await self._ensure_multi_image_command_allowed(
-            event,
-            count=parsed_command.count,
-        ):
             return
 
         if extract_first_image_component(event) is None:
@@ -293,15 +282,9 @@ class OpenAIImagePlugin(Star):
         """处理 `/oaiqlogo` 命令。"""
 
         try:
-            parsed_command = parse_command_payload(raw_prompt)
+            parsed_command = self._parse_command_payload_for_event(event, raw_prompt)
         except ValueError as exc:
             await event.send(event.plain_result(f"参数错误：{exc}"))
-            return
-
-        if not await self._ensure_multi_image_command_allowed(
-            event,
-            count=parsed_command.count,
-        ):
             return
 
         qq_id = extract_first_at_target(event)
@@ -880,27 +863,39 @@ class OpenAIImagePlugin(Star):
             return DEFAULT_IMAGES_MODEL
         return DEFAULT_RESPONSES_MODEL
 
-    async def _ensure_multi_image_command_allowed(
+    def _parse_command_payload_for_event(
         self,
         event: AstrMessageEvent,
-        *,
-        count: int,
-    ) -> bool:
-        """校验命令侧多图权限，避免普通成员一次触发过多图片任务。"""
+        raw_prompt: str,
+    ) -> ParsedCommand:
+        """按调用者权限解析命令参数。
 
-        if count <= 1:
-            return True
+        Bot 管理员保持完整参数解析，普通成员在开启限制时则不拆解任何参数。
+        这样普通成员输入的 `2`、`--size`、`-q`、`-m` 会完整保留到提示词里，
+        只是不再影响生成数量、尺寸、质量和审核设置。
+        """
+
+        clean_raw_prompt = str(raw_prompt or "").strip()
+        if not clean_raw_prompt:
+            raise ValueError("提示词不能为空")
+
+        if self._should_parse_command_options(event):
+            return parse_command_payload(clean_raw_prompt)
+
+        return ParsedCommand(count=1, prompt=clean_raw_prompt)
+
+    def _should_parse_command_options(self, event: AstrMessageEvent) -> bool:
+        """判断当前调用者是否允许拆解命令参数。
+
+        这里沿用原有配置键，保证旧配置升级后继续可用。
+        """
 
         admin_only = bool(self.config.get("multi_image_command_admin_only", True))
         if not admin_only:
             return True
 
         # AstrBot 的 is_admin 表示 Bot 管理员，不是 QQ 群管理员或群主。
-        if bool(event.is_admin()):
-            return True
-
-        await event.send(event.plain_result("权限不足，多张图片仅 Bot 管理员可用。"))
-        return False
+        return bool(event.is_admin())
 
     def _log_task_result(
         self,

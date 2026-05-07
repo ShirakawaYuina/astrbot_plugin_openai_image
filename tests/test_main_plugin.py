@@ -101,17 +101,31 @@ async def test_generate_command_recovers_prompt_from_full_message_when_filter_pa
 
 
 @pytest.mark.asyncio
-async def test_generate_command_rejects_multi_image_for_non_bot_admin():
+async def test_generate_command_keeps_parameters_in_prompt_for_non_bot_admin():
     module = _load_module()
     plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
-    plugin._execute_generate_flow = AsyncMock()
-    event = _make_event()
+    plugin._execute_generate_flow = AsyncMock(
+        return_value={
+            "status": "success",
+            "summary": "已生成 1 张图片",
+        }
+    )
+    event = _make_event(is_admin=False)
 
-    await plugin._handle_generate_command(event, raw_prompt="2 生成两只猫")
+    await plugin._handle_generate_command(
+        event,
+        raw_prompt="2 --size portrait -q high -m auto 生成一只猫",
+    )
 
     event.send.assert_awaited_once()
-    assert "多张图片仅 Bot 管理员可用" in event._sent_messages[0]
-    plugin._execute_generate_flow.assert_not_awaited()
+    assert "收到请求" in event._sent_messages[0]
+    plugin._execute_generate_flow.assert_awaited_once()
+    call_kwargs = plugin._execute_generate_flow.await_args.kwargs
+    assert call_kwargs["count"] == 1
+    assert call_kwargs["size"] is None
+    assert call_kwargs["quality"] == "auto"
+    assert call_kwargs["moderation"] == "low"
+    assert call_kwargs["prompt"] == "2 --size portrait -q high -m auto 生成一只猫"
 
 
 @pytest.mark.asyncio
@@ -155,6 +169,39 @@ async def test_generate_command_allows_multi_image_when_admin_only_config_disabl
     assert "收到请求" in event._sent_messages[0]
     plugin._execute_generate_flow.assert_awaited_once()
     assert plugin._execute_generate_flow.await_args.kwargs["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_edit_command_keeps_parameters_in_prompt_for_non_bot_admin():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    plugin._execute_edit_flow = AsyncMock(
+        return_value={
+            "status": "success",
+            "summary": "已编辑 1 张图片",
+        }
+    )
+    event = _make_event(
+        message_components=[SimpleNamespace(type="image", file="demo.png")],
+        is_admin=False,
+    )
+
+    results = await _collect_asyncgen(
+        plugin._handle_edit_command(
+            event,
+            raw_prompt="2 --size square -q medium -m auto 改成统一心理学海报",
+        )
+    )
+
+    assert len(results) == 1
+    assert results[0].chain[0].text == '收到请求，prompt="2 --size square -q medium -m auto 改成统一心理学海报"，正在生成中...'
+    plugin._execute_edit_flow.assert_awaited_once()
+    call_kwargs = plugin._execute_edit_flow.await_args.kwargs
+    assert call_kwargs["count"] == 1
+    assert call_kwargs["size"] is None
+    assert call_kwargs["quality"] == "auto"
+    assert call_kwargs["moderation"] == "low"
+    assert call_kwargs["prompt"] == "2 --size square -q medium -m auto 改成统一心理学海报"
 
 
 @pytest.mark.asyncio
@@ -209,25 +256,6 @@ async def test_edit_command_requires_image():
 
     event.send.assert_awaited_once()
     assert "未检测到图片" in event._sent_messages[0]
-
-
-@pytest.mark.asyncio
-async def test_edit_command_rejects_multi_image_before_pending_message_for_non_bot_admin():
-    module = _load_module()
-    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
-    plugin._execute_edit_flow = AsyncMock()
-    event = _make_event(
-        message_components=[SimpleNamespace(type="image", file="demo.png")]
-    )
-
-    results = await _collect_asyncgen(
-        plugin._handle_edit_command(event, raw_prompt="2 真人化图像")
-    )
-
-    assert results == []
-    event.send.assert_awaited_once()
-    assert "多张图片仅 Bot 管理员可用" in event._sent_messages[0]
-    plugin._execute_edit_flow.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -734,17 +762,34 @@ async def test_qlogo_command_requires_at_mention():
 
 
 @pytest.mark.asyncio
-async def test_qlogo_command_rejects_multi_image_for_non_bot_admin_before_at_check():
+async def test_qlogo_command_keeps_parameters_in_prompt_for_non_bot_admin():
     module = _load_module()
     plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
-    plugin._execute_avatar_edit_flow = AsyncMock()
-    event = _make_event()
+    plugin._execute_avatar_edit_flow = AsyncMock(
+        return_value={
+            "status": "success",
+            "summary": "已编辑 1 张图片",
+        }
+    )
+    event = _make_event(
+        message_text="/oaiqlogo @user 2 -q high -m auto 改成动漫头像",
+        message_components=[SimpleNamespace(type="at", qq="123456")],
+        is_admin=False,
+    )
 
-    await plugin._handle_qlogo_command(event, raw_prompt="2 改成动漫头像")
+    await plugin._handle_qlogo_command(
+        event,
+        raw_prompt="2 -q high -m auto 改成动漫头像",
+    )
 
     event.send.assert_awaited_once()
-    assert "多张图片仅 Bot 管理员可用" in event._sent_messages[0]
-    plugin._execute_avatar_edit_flow.assert_not_awaited()
+    assert "收到请求" in event._sent_messages[0]
+    plugin._execute_avatar_edit_flow.assert_awaited_once()
+    call_kwargs = plugin._execute_avatar_edit_flow.await_args.kwargs
+    assert call_kwargs["count"] == 1
+    assert call_kwargs["quality"] == "auto"
+    assert call_kwargs["moderation"] == "low"
+    assert call_kwargs["prompt"] == "2 -q high -m auto 改成动漫头像"
 
 
 @pytest.mark.asyncio
@@ -792,6 +837,7 @@ async def test_qlogo_command_passes_quality_and_moderation_override():
     event = _make_event(
         message_text="/oaiqlogo @user -q high -m auto 改成动漫头像",
         message_components=[SimpleNamespace(type="at", qq="123456")],
+        is_admin=True,
     )
 
     await plugin._handle_qlogo_command(

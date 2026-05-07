@@ -68,10 +68,10 @@
         "hint": "插件内部同一时刻允许执行的最大图片任务数。"
     },
     "multi_image_command_admin_only": {
-        "description": "命令多图仅限 Bot 管理员",
+        "description": "命令参数仅限 Bot 管理员",
         "type": "bool",
         "default": true,
-        "hint": "开启后，普通用户通过 /oaiimg、/oaiedit、/oaiqlogo 指定数量大于 1 时会被拒绝；这里的管理员指 AstrBot 的 Bot 管理员，不是 QQ 群管理员。"
+        "hint": "开启后，普通用户通过 /oaiimg、/oaiedit、/oaiqlogo 输入的数量、--size、--quality、--moderation 等参数都会被忽略并保留为提示词文本；这里的管理员指 AstrBot 的 Bot 管理员，不是 QQ 群管理员。"
     },
     "max_cache_images": {
         "description": "最大缓存图片数量",
