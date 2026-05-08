@@ -142,6 +142,8 @@ class OpenAIImagePlugin(Star):
             prompt(string): 图片生成提示词。
             count(number): 生成图片数量，默认 1。
         """
+        # LLM 调用时可能传递 float 类型（如 1.0），需转为 int
+        count = int(count)
 
         result = await self._execute_generate_flow(
             event=event,
@@ -165,6 +167,8 @@ class OpenAIImagePlugin(Star):
             prompt(string): 图片编辑提示词。
             count(number): 生成图片数量，默认 1。
         """
+        # LLM 调用时可能传递 float 类型（如 1.0），需转为 int
+        count = int(count)
 
         if extract_first_image_component(event) is None:
             return "未检测到图片，请在当前消息中携带图片或回复一张图片后再调用图片编辑工具。"
