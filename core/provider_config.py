@@ -41,7 +41,7 @@ def resolve_active_image_provider(config: dict[str, Any]) -> ImageProviderConfig
             provider = _normalize_provider_payload(provider_payload)
             if provider is None:
                 continue
-            if _is_selected_provider(provider, active_provider_id):
+            if provider.provider_id == active_provider_id:
                 return provider
             if fallback_provider is None:
                 fallback_provider = provider
@@ -77,19 +77,6 @@ def _normalize_provider_payload(payload: Any) -> ImageProviderConfig | None:
         base_url=base_url,
         api_key=api_key,
     )
-
-
-def _is_selected_provider(provider: ImageProviderConfig, selected_value: str) -> bool:
-    """判断下拉选择值是否命中供应商。
-
-    当前 AstrBot 通用配置下拉主要保存静态 options 的值，因此继续支持 provider_id。
-    如果后续 WebUI 支持用已配置供应商名称作为动态下拉值，这里也能直接按 name 匹配。
-    """
-
-    clean_selected_value = str(selected_value or "").strip()
-    if not clean_selected_value:
-        return False
-    return clean_selected_value in {provider.provider_id, provider.name}
 
 
 def _resolve_legacy_provider(config: dict[str, Any]) -> ImageProviderConfig | None:
