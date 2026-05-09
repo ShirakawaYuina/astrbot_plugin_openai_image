@@ -1,15 +1,83 @@
 {
-    "base_url": {
-        "description": "图片接口基础地址",
-        "type": "string",
-        "default": "https://cdn.jucode.top/v1",
-        "hint": "这里只填写站点 Base URL，例如 https://cdn.jucode.top/v1。插件会按端点类型自动补全 /responses、/images/generations 或 /images/edits。"
+    "image_providers": {
+        "description": "图片接口供应商",
+        "type": "template_list",
+        "default": [
+            {
+                "__template_key": "openai_compatible",
+                "provider_id": "default",
+                "name": "默认供应商",
+                "base_url": "https://cdn.jucode.top/v1",
+                "api_key": ""
+            }
+        ],
+        "hint": "可添加多个 OpenAI 兼容图片接口供应商。provider_id 需要从下方供应商槽位中选择，并与“当前启用供应商”下拉选择保持一致。",
+        "templates": {
+            "openai_compatible": {
+                "name": "OpenAI 兼容供应商",
+                "description": "适用于兼容 OpenAI Responses 或 Images API 的图片服务。",
+                "items": {
+                    "provider_id": {
+                        "description": "供应商槽位",
+                        "type": "string",
+                        "default": "default",
+                        "options": [
+                            "default",
+                            "provider_2",
+                            "provider_3",
+                            "provider_4",
+                            "provider_5"
+                        ],
+                        "labels": [
+                            "默认供应商",
+                            "供应商 2",
+                            "供应商 3",
+                            "供应商 4",
+                            "供应商 5"
+                        ],
+                        "hint": "用于和“当前启用供应商”下拉选择匹配。多个供应商请使用不同槽位。"
+                    },
+                    "name": {
+                        "description": "供应商名称",
+                        "type": "string",
+                        "default": "默认供应商",
+                        "hint": "用于日志区分不同图片接口，例如 Jucode、OpenAI、内网代理等。"
+                    },
+                    "base_url": {
+                        "description": "图片接口基础地址",
+                        "type": "string",
+                        "default": "https://cdn.jucode.top/v1",
+                        "hint": "这里只填写站点 Base URL，例如 https://cdn.jucode.top/v1。插件会按端点类型自动补全 /responses、/images/generations 或 /images/edits。"
+                    },
+                    "api_key": {
+                        "description": "图片接口 API Key",
+                        "type": "string",
+                        "default": "",
+                        "hint": "将以 Bearer Token 方式附带到图片接口请求头中。"
+                    }
+                }
+            }
+        }
     },
-    "api_key": {
-        "description": "图片接口 API Key",
+    "active_provider_id": {
+        "description": "当前启用供应商",
         "type": "string",
-        "default": "",
-        "hint": "将以 Bearer Token 方式附带到图片接口请求头中。"
+        "default": "default",
+        "options": [
+            "default",
+            "provider_2",
+            "provider_3",
+            "provider_4",
+            "provider_5"
+        ],
+        "labels": [
+            "默认供应商",
+            "供应商 2",
+            "供应商 3",
+            "供应商 4",
+            "供应商 5"
+        ],
+        "hint": "下拉选择当前要使用的图片接口供应商。请确保供应商列表中存在相同槽位且已填写 Base URL。"
     },
     "model": {
         "description": "图片模型名称",

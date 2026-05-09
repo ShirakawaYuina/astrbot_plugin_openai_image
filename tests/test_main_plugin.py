@@ -43,6 +43,39 @@ def test_rebuild_runtime_dependencies_passes_image_send_config_to_presenter():
     assert plugin.presenter.url_base == "http://astrbot:6185"
 
 
+def test_rebuild_runtime_dependencies_uses_dropdown_selected_provider():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "active_provider_id": "primary",
+            "image_providers": [
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "backup",
+                    "name": "备用供应商",
+                    "base_url": "https://backup.example.com/v1",
+                    "api_key": "backup-key",
+                },
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "primary",
+                    "name": "主供应商",
+                    "base_url": "https://primary.example.com/v1",
+                    "api_key": "primary-key",
+                },
+            ],
+        },
+    )
+
+    plugin._rebuild_runtime_dependencies()
+
+    active_provider = plugin._get_active_image_provider()
+    assert active_provider.name == "主供应商"
+    assert active_provider.base_url == "https://primary.example.com/v1"
+    assert active_provider.api_key == "primary-key"
+
+
 def _make_event(
     message_text: str = "",
     message_components=None,

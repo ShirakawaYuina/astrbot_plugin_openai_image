@@ -22,6 +22,10 @@ from .core.commands import normalize_output_size, parse_command_payload
 from .core.gateways.openai_image_gateway import OpenAIImageGateway
 from .core.models import ParsedCommand
 from .core.presenters.result_presenter import ResultPresenter
+from .core.provider_config import (
+    ImageProviderConfig,
+    resolve_active_image_provider,
+)
 from .core.services.image_edit_service import ImageEditService
 from .core.services.image_generate_service import ImageGenerateService
 from .core.services.image_task_service import ImageTaskService
@@ -43,7 +47,7 @@ ENDPOINT_TYPE_RESPONSES = "responses"
     PLUGIN_NAME,
     "Codex",
     "基于 OpenAI 兼容 chat/completions 接口的图片生成与图片编辑插件。",
-    "0.3.0",
+    "0.5.1",
 )
 class OpenAIImagePlugin(Star):
     """OpenAI 图片插件。"""
@@ -57,19 +61,22 @@ class OpenAIImagePlugin(Star):
         self._generate_service: ImageGenerateService | None = None
         self._edit_service: ImageEditService | None = None
         self._task_service: ImageTaskService | None = None
+        self._active_image_provider: ImageProviderConfig | None = None
 
     async def initialize(self) -> None:
         """初始化插件运行时依赖。"""
 
         self._rebuild_runtime_dependencies()
+        active_provider = self._get_active_image_provider()
         logger.info(
-            "[OpenAIImage][startup] 插件已初始化 base_url=%s endpoint_type=%s model=%s max_concurrency=%s max_cache_images=%s api_key=%s",
-            self.config.get("base_url", ""),
+            "[OpenAIImage][startup] 插件已初始化 provider=%s base_url=%s endpoint_type=%s model=%s max_concurrency=%s max_cache_images=%s api_key=%s",
+            active_provider.name,
+            active_provider.base_url,
             self._get_endpoint_type(),
             self._get_configured_model(),
             self.config.get("max_concurrency", 2),
             self.config.get("max_cache_images", 50),
-            self._mask_secret(self.config.get("api_key", "")),
+            self._mask_secret(active_provider.api_key),
         )
 
     async def terminate(self) -> None:
@@ -798,6 +805,9 @@ class OpenAIImagePlugin(Star):
     def _rebuild_runtime_dependencies(self) -> None:
         """根据当前配置重建运行时依赖。"""
 
+        active_provider = resolve_active_image_provider(self.config)
+        self._active_image_provider = active_provider
+
         self.presenter = ResultPresenter(
             send_mode=str(self.config.get("image_send_mode", "base64") or "base64"),
             url_base=str(self.config.get("image_send_url_base", "") or ""),
@@ -810,8 +820,8 @@ class OpenAIImagePlugin(Star):
         )
 
         self._image_gateway = OpenAIImageGateway(
-            base_url=str(self.config.get("base_url", "")).strip(),
-            api_key=str(self.config.get("api_key", "")).strip(),
+            base_url=active_provider.base_url,
+            api_key=active_provider.api_key,
             timeout_seconds=int(self.config.get("request_timeout_seconds", 180) or 180),
         )
         self._generate_service = ImageGenerateService(
@@ -831,6 +841,14 @@ class OpenAIImagePlugin(Star):
 
         if self._image_gateway is None or self._generate_service is None:
             self._rebuild_runtime_dependencies()
+
+    def _get_active_image_provider(self) -> ImageProviderConfig:
+        """读取当前启用供应商，必要时重新解析配置作为兜底。"""
+
+        if self._active_image_provider is None:
+            # initialize 日志可能在依赖重建后读取该对象；这里保留兜底，防止测试或热重载流程绕过重建。
+            self._active_image_provider = resolve_active_image_provider(self.config)
+        return self._active_image_provider
 
     def _get_negative_prompt(self) -> str:
         """读取全局负面提示词配置，统一去除首尾空白避免污染请求体。"""
