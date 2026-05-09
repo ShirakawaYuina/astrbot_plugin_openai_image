@@ -42,6 +42,33 @@ def test_resolve_active_image_provider_uses_dropdown_selected_provider_id():
     assert provider.api_key == "primary-key"
 
 
+def test_resolve_active_image_provider_accepts_provider_name_as_selection_value():
+    module = _load_module()
+
+    provider = module.resolve_active_image_provider(
+        {
+            "active_provider_id": "主供应商",
+            "image_providers": [
+                {
+                    "provider_id": "backup",
+                    "name": "备用供应商",
+                    "base_url": "https://backup.example.com/v1",
+                    "api_key": "backup-key",
+                },
+                {
+                    "provider_id": "primary",
+                    "name": "主供应商",
+                    "base_url": "https://primary.example.com/v1",
+                    "api_key": "primary-key",
+                },
+            ],
+        }
+    )
+
+    assert provider.provider_id == "primary"
+    assert provider.name == "主供应商"
+
+
 def test_resolve_active_image_provider_falls_back_to_legacy_fields():
     module = _load_module()
 
@@ -77,4 +104,5 @@ def test_config_schema_replaces_base_url_and_api_key_with_provider_list():
     assert schema["active_provider_id"]["type"] == "string"
     assert "default" in schema["active_provider_id"]["options"]
     assert schema["image_providers"]["type"] == "template_list"
-    assert "openai_compatible" in schema["image_providers"]["templates"]
+    provider_template = schema["image_providers"]["templates"]["openai_compatible"]
+    assert provider_template["items"]["provider_id"]["invisible"] is True
