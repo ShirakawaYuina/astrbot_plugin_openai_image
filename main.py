@@ -48,7 +48,7 @@ ENDPOINT_TYPE_RESPONSES = "responses"
     PLUGIN_NAME,
     "Codex",
     "基于 OpenAI 兼容 chat/completions 接口的图片生成与图片编辑插件。",
-    "0.6.0",
+    "0.6.1",
 )
 class OpenAIImagePlugin(Star):
     """OpenAI 图片插件。"""

@@ -707,25 +707,28 @@ ADMIN_HTML = r"""<!doctype html>
       background: rgba(255, 255, 255, 0.8);
       box-shadow: var(--shadow);
     }
-    .tabs {
+    .mode-switch {
       display: flex;
-      gap: 20px;
-      border-bottom: 1px solid var(--line);
-      margin: -2px -4px 16px;
-      padding: 0 4px;
+      width: fit-content;
+      gap: 6px;
+      padding: 5px;
+      margin-bottom: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #f3f7fd;
     }
-    .tab {
-      min-height: 40px;
-      background: transparent;
+    .mode-option {
+      min-height: 34px;
+      padding: 0 14px;
+      border-radius: 8px;
       color: var(--muted);
-      border-bottom: 2px solid transparent;
-      border-radius: 0;
-      padding: 0;
+      background: transparent;
       font-weight: 700;
     }
-    .tab.active {
+    .mode-option.active {
+      background: #fff;
       color: var(--primary);
-      border-bottom-color: var(--primary);
+      box-shadow: 0 8px 18px rgba(48, 76, 126, 0.09);
     }
     .form-grid {
       display: grid;
@@ -758,19 +761,40 @@ ADMIN_HTML = r"""<!doctype html>
       margin-top: 12px;
     }
     .field-row .control { width: 100%; height: 40px; }
-    .style-strip {
+    .custom-size { margin-top: 10px; }
+    .reference-panel {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-      margin-top: 28px;
+      gap: 12px;
     }
-    .style-tile {
-      height: 68px;
-      border: 2px solid transparent;
+    .paste-zone {
+      display: grid;
+      place-items: center;
+      min-height: 168px;
+      padding: 16px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.58);
+      color: var(--muted);
+      text-align: center;
+      outline: none;
+    }
+    .paste-zone:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(61, 115, 246, 0.12);
+    }
+    .paste-preview {
+      overflow: hidden;
+      border: 1px solid var(--line);
       border-radius: 10px;
-      background-size: cover;
+      background: #edf3fb;
+      aspect-ratio: 4 / 3;
     }
-    .style-tile.active { border-color: var(--primary); }
+    .paste-preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
     .preview {
       padding: 22px;
       background: rgba(255, 255, 255, 0.88);
@@ -786,7 +810,9 @@ ADMIN_HTML = r"""<!doctype html>
       border-radius: 8px;
       border: 1px solid var(--line);
       background: #edf3fb;
-      aspect-ratio: 4 / 3;
+      aspect-ratio: 1 / 1;
+      min-height: 420px;
+      cursor: zoom-in;
     }
     .preview-box img {
       width: 100%;
@@ -921,15 +947,15 @@ ADMIN_HTML = r"""<!doctype html>
       </div>
       <div class="nav-group">
         <div class="nav-label">内容创作</div>
-        <button class="nav-item active" type="button" data-mode="gallery" title="历史图库">
+        <button class="nav-item active" type="button" data-mode="gallery" data-scroll-target="galleryPanel" title="历史图库">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 13l2.5-2.5L14 14l2-2 3 3"/><circle cx="8" cy="9" r="1"/></svg>
           <span>历史图库</span>
         </button>
-        <button class="nav-item" type="button" data-focus-tab="generate" title="生图">
+        <button class="nav-item" type="button" data-scroll-target="taskPanel" data-task-mode="generate" title="生图">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="M6 6l2.8 2.8"/><path d="M15.2 15.2L18 18"/><path d="M18 6l-2.8 2.8"/><path d="M8.8 15.2L6 18"/></svg>
           <span>生图</span>
         </button>
-        <button class="nav-item" type="button" data-focus-tab="edit" title="编辑">
+        <button class="nav-item" type="button" data-scroll-target="taskPanel" data-task-mode="edit" title="编辑">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
           <span>编辑</span>
         </button>
@@ -992,52 +1018,36 @@ ADMIN_HTML = r"""<!doctype html>
         <div class="detail-row"><span>远程访问</span><strong>监听地址改为 0.0.0.0</strong></div>
       </section>
 
-      <section class="workspace">
-        <div class="tabs">
-          <button id="generateTab" class="tab active" type="button" data-tab="generate">生图</button>
-          <button id="editTab" class="tab" type="button" data-tab="edit">编辑</button>
+      <section id="taskPanel" class="workspace">
+        <div class="mode-switch" role="group" aria-label="创作模式">
+          <button id="taskModeGenerate" class="mode-option active" type="button" data-task-mode="generate">生图</button>
+          <button id="taskModeEdit" class="mode-option" type="button" data-task-mode="edit">编辑</button>
         </div>
-        <form id="generateForm" class="form-grid">
+        <form id="taskForm" class="form-grid">
           <div>
-            <label for="generatePrompt">提示词</label>
-            <textarea id="generatePrompt" placeholder="描述你想生成的图片，例如：浅色自然光下的现代别墅，干净构图，高细节。"></textarea>
+            <label for="taskPrompt">提示词</label>
+            <textarea id="taskPrompt" placeholder="描述你想生成或编辑的图片，例如：浅色自然光下的现代别墅，干净构图，高细节。"></textarea>
             <div class="field-row">
               <div><label for="generateCount">数量</label><input id="generateCount" class="control" type="number" min="1" max="4" value="1"></div>
-              <div><label for="generateSize">尺寸</label><input id="generateSize" class="control" type="text" placeholder="auto"></div>
+              <div><label for="generateSizePreset">生图尺寸</label><select id="generateSizePreset" class="control"><option value="auto">自动</option><option value="1024x1024">方图 1024x1024</option><option value="1024x1536">竖图 1024x1536</option><option value="1536x1024">横图 1536x1024</option><option value="2048x2048">2K 方图</option><option value="2560x1440">2K 横图</option><option value="1440x2560">2K 竖图</option><option value="custom">自定义</option></select><input id="generateCustomSize" class="control custom-size hidden" type="text" placeholder="例如 1280x1280"></div>
               <div><label for="generateQuality">质量</label><select id="generateQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
               <div><label for="generateModeration">审核</label><select id="generateModeration" class="control"><option>low</option><option>auto</option></select></div>
             </div>
-            <button id="generateSubmit" class="btn primary" type="submit" style="width:100%; margin-top:16px;">
+            <div id="editOptions" class="field-row hidden">
+              <div style="grid-column:span 2;"><label for="editImage">参考图片</label><input id="editImage" class="control" type="file" accept="image/png,image/jpeg,image/webp"></div>
+              <div><label for="editSizePreset">编辑尺寸</label><select id="editSizePreset" class="control"><option value="auto">自动</option><option value="1024x1024">方图 1024x1024</option><option value="1024x1536">竖图 1024x1536</option><option value="1536x1024">横图 1536x1024</option><option value="2048x2048">2K 方图</option><option value="2560x1440">2K 横图</option><option value="1440x2560">2K 竖图</option><option value="custom">自定义</option></select><input id="editCustomSize" class="control custom-size hidden" type="text" placeholder="例如 1280x1280"></div>
+              <div><label for="editQuality">编辑质量</label><select id="editQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
+            </div>
+            <button id="taskSubmit" class="btn primary" type="submit" style="width:100%; margin-top:16px;">
               <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="M6 6l2.8 2.8"/><path d="M15.2 15.2L18 18"/><path d="M18 6l-2.8 2.8"/><path d="M8.8 15.2L6 18"/></svg>
               生成图片
             </button>
           </div>
-          <div>
-            <label>风格参考</label>
-            <div class="style-strip">
-              <div class="style-tile active" style="background:linear-gradient(135deg,#dbeafe,#9cc9ff);"></div>
-              <div class="style-tile" style="background:linear-gradient(135deg,#fee2e2,#fef3c7);"></div>
-              <div class="style-tile" style="background:linear-gradient(135deg,#dcfce7,#e0f2fe);"></div>
-              <div class="style-tile" style="background:linear-gradient(135deg,#f3e8ff,#dbeafe);"></div>
-            </div>
+          <div id="referencePanel" class="reference-panel hidden">
+            <label>参考图片预览</label>
+            <div id="pasteImageZone" class="paste-zone" tabindex="0">点击这里后按 Ctrl+V 粘贴参考图片，或使用左侧文件选择。</div>
+            <div id="pasteImagePreview" class="paste-preview hidden"></div>
           </div>
-        </form>
-
-        <form id="editForm" class="form-grid hidden">
-          <div>
-            <label for="editPrompt">编辑提示词</label>
-            <textarea id="editPrompt" placeholder="描述修改方式，例如：保持构图不变，改成柔和水彩风格。"></textarea>
-            <div class="field-row">
-              <div style="grid-column:span 2;"><label for="editImage">输入图片</label><input id="editImage" class="control" type="file" accept="image/png,image/jpeg,image/webp"></div>
-              <div><label for="editSize">尺寸</label><input id="editSize" class="control" type="text" placeholder="auto"></div>
-              <div><label for="editQuality">质量</label><select id="editQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
-            </div>
-            <button id="editSubmit" class="btn primary" type="submit" style="width:100%; margin-top:16px;">
-              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
-              编辑图片
-            </button>
-          </div>
-          <div class="empty-gallery">上传图片后，结果会自动进入历史图库。</div>
         </form>
       </section>
     </main>
@@ -1045,24 +1055,26 @@ ADMIN_HTML = r"""<!doctype html>
     <aside class="preview">
       <div class="preview-head">
         <h2>预览</h2>
-        <button id="openImageBtn" class="btn" type="button" disabled>打开原图</button>
+        <button id="copyImageBtn" class="btn" type="button" disabled>复制图片</button>
       </div>
-      <div id="previewBox" class="preview-box empty-preview">请选择一张图片</div>
+      <div id="previewBox" class="preview-box empty-preview" title="双击查看原图">请选择一张图片</div>
       <h3 id="detailTitle" class="detail-title">暂无选中图片</h3>
       <div class="detail-row"><span>格式</span><strong id="detailType">-</strong></div>
       <div class="detail-row"><span>大小</span><strong id="detailSize">-</strong></div>
       <div class="detail-row"><span>更新时间</span><strong id="detailTime">-</strong></div>
-      <div class="actions">
-        <button id="reusePromptBtn" class="btn" type="button">再次生成</button>
-        <button id="useForEditBtn" class="btn" type="button">用于编辑</button>
-      </div>
     </aside>
   </div>
 
   <div id="toast" class="toast hidden"></div>
 
   <script>
-    const state = { token: localStorage.getItem("openaiImageAdminToken") || "", images: [], selected: null, activeTab: "generate" };
+    const state = {
+      token: localStorage.getItem("openaiImageAdminToken") || "",
+      images: [],
+      selected: null,
+      activeMode: "generate",
+      referenceImageFile: null,
+    };
     const $ = (id) => document.getElementById(id);
 
     function authHeaders(extra = {}) {
@@ -1123,6 +1135,16 @@ ADMIN_HTML = r"""<!doctype html>
       return `${image.url}?v=${image.modified_at}`;
     }
 
+    function resolveSizeValue(presetId, customId) {
+      const preset = $(presetId).value;
+      if (preset === "custom") return $(customId).value.trim();
+      return preset;
+    }
+
+    function syncCustomSize(presetId, customId) {
+      $(customId).classList.toggle("hidden", $(presetId).value !== "custom");
+    }
+
     function filteredImages() {
       const keyword = $("searchInput").value.trim().toLowerCase();
       const type = $("typeFilter").value;
@@ -1174,7 +1196,7 @@ ADMIN_HTML = r"""<!doctype html>
       $("detailType").textContent = image.mime_type;
       $("detailSize").textContent = formatBytes(image.size_bytes);
       $("detailTime").textContent = new Date(image.modified_at * 1000).toLocaleString();
-      $("openImageBtn").disabled = false;
+      $("copyImageBtn").disabled = false;
       renderGallery();
     }
 
@@ -1190,12 +1212,54 @@ ADMIN_HTML = r"""<!doctype html>
       }
     }
 
-    function setActiveTab(tab) {
-      state.activeTab = tab;
-      $("generateTab").classList.toggle("active", tab === "generate");
-      $("editTab").classList.toggle("active", tab === "edit");
-      $("generateForm").classList.toggle("hidden", tab !== "generate");
-      $("editForm").classList.toggle("hidden", tab !== "edit");
+    function setTaskMode(mode) {
+      state.activeMode = mode;
+      $("taskModeGenerate").classList.toggle("active", mode === "generate");
+      $("taskModeEdit").classList.toggle("active", mode === "edit");
+      $("editOptions").classList.toggle("hidden", mode !== "edit");
+      $("referencePanel").classList.toggle("hidden", mode !== "edit");
+      $("generateCount").disabled = mode === "edit";
+      $("taskSubmit").lastChild.textContent = mode === "edit" ? " 编辑图片" : " 生成图片";
+      if (mode === "edit") $("pasteImageZone").focus();
+    }
+
+    function setReferenceImageFile(file) {
+      if (!file || !file.type.startsWith("image/")) {
+        showToast("请提供图片文件");
+        return;
+      }
+      state.referenceImageFile = file;
+      const previewUrl = URL.createObjectURL(file);
+      $("pasteImagePreview").classList.remove("hidden");
+      $("pasteImagePreview").innerHTML = `<img src="${escapeAttribute(previewUrl)}" alt="参考图片预览">`;
+      $("pasteImageZone").textContent = "参考图片已载入，可继续粘贴替换。";
+    }
+
+    function handlePasteImage(event) {
+      const items = event.clipboardData && event.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            event.preventDefault();
+            setReferenceImageFile(file);
+            return;
+          }
+        }
+      }
+    }
+
+    async function copySelectedImage() {
+      if (!state.selected) return;
+      try {
+        const response = await fetch(imageUrl(state.selected));
+        const blob = await response.blob();
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        showToast("图片已复制到剪贴板");
+      } catch (error) {
+        showToast("复制失败，请双击预览图打开原图后手动复制");
+      }
     }
 
     $("loginForm").addEventListener("submit", async (event) => {
@@ -1221,10 +1285,14 @@ ADMIN_HTML = r"""<!doctype html>
     $("searchInput").addEventListener("input", renderGallery);
     $("typeFilter").addEventListener("change", renderGallery);
     $("sortFilter").addEventListener("change", renderGallery);
-    $("generateTab").addEventListener("click", () => setActiveTab("generate"));
-    $("editTab").addEventListener("click", () => setActiveTab("edit"));
-    document.querySelectorAll("[data-focus-tab]").forEach((button) => {
-      button.addEventListener("click", () => setActiveTab(button.dataset.focusTab));
+    $("taskModeGenerate").addEventListener("click", () => setTaskMode("generate"));
+    $("taskModeEdit").addEventListener("click", () => setTaskMode("edit"));
+    $("generateSizePreset").addEventListener("change", () => syncCustomSize("generateSizePreset", "generateCustomSize"));
+    $("editSizePreset").addEventListener("change", () => syncCustomSize("editSizePreset", "editCustomSize"));
+    $("editImage").addEventListener("change", () => setReferenceImageFile($("editImage").files[0]));
+    $("pasteImageZone").addEventListener("paste", handlePasteImage);
+    document.addEventListener("paste", (event) => {
+      if (state.activeMode === "edit") handlePasteImage(event);
     });
     document.querySelectorAll("[data-mode]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -1232,68 +1300,67 @@ ADMIN_HTML = r"""<!doctype html>
         button.classList.add("active");
         $("settingsPanel").classList.toggle("hidden", button.dataset.mode !== "settings");
         $("galleryPanel").classList.toggle("hidden", button.dataset.mode === "settings");
+        if (button.dataset.scrollTarget) {
+          $(button.dataset.scrollTarget).scrollIntoView({ behavior: "smooth", block: "start" });
+        }
       });
     });
-    $("openImageBtn").addEventListener("click", () => {
+    document.querySelectorAll("[data-task-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        setTaskMode(button.dataset.taskMode);
+        $("settingsPanel").classList.add("hidden");
+        $("galleryPanel").classList.remove("hidden");
+        document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
+        if (button.classList.contains("nav-item")) button.classList.add("active");
+        if (button.dataset.scrollTarget) {
+          $(button.dataset.scrollTarget).scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      });
+    });
+    $("previewBox").addEventListener("dblclick", () => {
       if (state.selected) window.open(imageUrl(state.selected), "_blank", "noopener");
     });
-    $("reusePromptBtn").addEventListener("click", () => {
-      setActiveTab("generate");
-      $("generatePrompt").focus();
-    });
-    $("useForEditBtn").addEventListener("click", () => {
-      setActiveTab("edit");
-      $("editPrompt").focus();
-    });
+    $("copyImageBtn").addEventListener("click", copySelectedImage);
 
-    $("generateForm").addEventListener("submit", async (event) => {
+    $("taskForm").addEventListener("submit", async (event) => {
       event.preventDefault();
-      const count = Math.max(1, Math.min(4, Number($("generateCount").value || 1)));
-      const submit = $("generateSubmit");
+      const submit = $("taskSubmit");
       submit.disabled = true;
       try {
         let lastImage = "";
-        for (let index = 0; index < count; index += 1) {
-          const data = await apiFetch("/api/generate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              prompt: $("generatePrompt").value,
-              size: $("generateSize").value,
-              quality: $("generateQuality").value,
-              moderation: $("generateModeration").value,
-            }),
-          });
+        if (state.activeMode === "generate") {
+          const count = Math.max(1, Math.min(4, Number($("generateCount").value || 1)));
+          for (let index = 0; index < count; index += 1) {
+            const data = await apiFetch("/api/generate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                prompt: $("taskPrompt").value,
+                size: resolveSizeValue("generateSizePreset", "generateCustomSize"),
+                quality: $("generateQuality").value,
+                moderation: $("generateModeration").value,
+              }),
+            });
+            lastImage = data.image && data.image.name;
+          }
+          showToast("图片生成完成");
+        } else {
+          const file = state.referenceImageFile || $("editImage").files[0];
+          if (!file) {
+            showToast("请先上传或粘贴参考图片");
+            return;
+          }
+          const body = new FormData();
+          body.append("prompt", $("taskPrompt").value);
+          body.append("size", resolveSizeValue("editSizePreset", "editCustomSize"));
+          body.append("quality", $("editQuality").value);
+          body.append("moderation", "low");
+          body.append("image", file);
+          const data = await apiFetch("/api/edit", { method: "POST", body });
           lastImage = data.image && data.image.name;
+          showToast("图片编辑完成");
         }
         await loadImages(lastImage);
-        showToast("图片生成完成");
-      } catch (error) {
-        showToast(error.message);
-      } finally {
-        submit.disabled = false;
-      }
-    });
-
-    $("editForm").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const file = $("editImage").files[0];
-      if (!file) {
-        showToast("请先选择待编辑图片");
-        return;
-      }
-      const body = new FormData();
-      body.append("prompt", $("editPrompt").value);
-      body.append("size", $("editSize").value);
-      body.append("quality", $("editQuality").value);
-      body.append("moderation", "low");
-      body.append("image", file);
-      const submit = $("editSubmit");
-      submit.disabled = true;
-      try {
-        const data = await apiFetch("/api/edit", { method: "POST", body });
-        await loadImages(data.image && data.image.name);
-        showToast("图片编辑完成");
       } catch (error) {
         showToast(error.message);
       } finally {

@@ -184,6 +184,41 @@ def test_admin_html_escapes_image_names_and_avoids_url_tokens():
     assert "?token=" not in module.ADMIN_HTML
 
 
+def test_admin_html_uses_unified_generate_edit_panel_and_size_presets():
+    module = _load_module()
+
+    assert "id=\"taskModeGenerate\"" in module.ADMIN_HTML
+    assert "id=\"taskModeEdit\"" in module.ADMIN_HTML
+    assert "id=\"generateSizePreset\"" in module.ADMIN_HTML
+    assert "id=\"generateCustomSize\"" in module.ADMIN_HTML
+    assert "id=\"editSizePreset\"" in module.ADMIN_HTML
+    assert "id=\"editCustomSize\"" in module.ADMIN_HTML
+    assert "value=\"custom\"" in module.ADMIN_HTML
+    assert "function resolveSizeValue" in module.ADMIN_HTML
+    assert "id=\"generateTab\"" not in module.ADMIN_HTML
+    assert "id=\"editTab\"" not in module.ADMIN_HTML
+    assert "id=\"editForm\"" not in module.ADMIN_HTML
+
+
+def test_admin_html_preview_actions_match_requested_gallery_flow():
+    module = _load_module()
+
+    assert "id=\"copyImageBtn\"" in module.ADMIN_HTML
+    assert "addEventListener(\"dblclick\"" in module.ADMIN_HTML
+    assert "copySelectedImage" in module.ADMIN_HTML
+    assert "再次生成" not in module.ADMIN_HTML
+    assert "用于编辑" not in module.ADMIN_HTML
+
+
+def test_admin_html_supports_paste_reference_image_preview():
+    module = _load_module()
+
+    assert "pasteImagePreview" in module.ADMIN_HTML
+    assert "handlePasteImage" in module.ADMIN_HTML
+    assert "clipboardData.items" in module.ADMIN_HTML
+    assert "referenceImageFile" in module.ADMIN_HTML
+
+
 @pytest.mark.asyncio
 async def test_create_generation_job_uses_plugin_generate_service(tmp_path: Path):
     module = _load_module()
