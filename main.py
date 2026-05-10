@@ -35,6 +35,7 @@ from .core.utils.image_extract import (
     extract_first_image_component,
     extract_image_components,
 )
+from .core.web_admin import WebAdminServer, WebAdminSettings
 
 PLUGIN_NAME = "astrbot_plugin_openai_image"
 DEFAULT_RESPONSES_MODEL = "gpt-5.4-mini"
@@ -47,7 +48,7 @@ ENDPOINT_TYPE_RESPONSES = "responses"
     PLUGIN_NAME,
     "Codex",
     "基于 OpenAI 兼容 chat/completions 接口的图片生成与图片编辑插件。",
-    "0.5.1",
+    "0.6.0",
 )
 class OpenAIImagePlugin(Star):
     """OpenAI 图片插件。"""
@@ -62,6 +63,7 @@ class OpenAIImagePlugin(Star):
         self._edit_service: ImageEditService | None = None
         self._task_service: ImageTaskService | None = None
         self._active_image_provider: ImageProviderConfig | None = None
+        self._web_admin_server: WebAdminServer | None = None
 
     async def initialize(self) -> None:
         """初始化插件运行时依赖。"""
@@ -78,10 +80,14 @@ class OpenAIImagePlugin(Star):
             self.config.get("max_cache_images", 50),
             self._mask_secret(active_provider.api_key),
         )
+        if self._web_admin_server is not None:
+            await self._web_admin_server.start()
 
     async def terminate(self) -> None:
         """关闭插件内部创建的网络资源。"""
 
+        if self._web_admin_server is not None:
+            await self._web_admin_server.stop()
         if self._image_gateway is not None:
             await self._image_gateway.close()
 
@@ -834,6 +840,11 @@ class OpenAIImagePlugin(Star):
         )
         self._task_service = ImageTaskService(
             max_concurrency=int(self.config.get("max_concurrency", 2) or 2),
+        )
+        self._web_admin_server = WebAdminServer(
+            plugin=self,
+            settings=WebAdminSettings.from_config(self.config),
+            cache_dir=cache_root,
         )
 
     def _ensure_ready(self) -> None:

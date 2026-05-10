@@ -76,6 +76,33 @@ def test_rebuild_runtime_dependencies_uses_dropdown_selected_provider():
     assert active_provider.api_key == "primary-key"
 
 
+def test_rebuild_runtime_dependencies_prepares_web_admin_server():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "image_providers": [
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "default",
+                    "name": "默认供应商",
+                    "base_url": "https://example.com/v1",
+                    "api_key": "demo-key",
+                }
+            ],
+            "web_admin_enabled": True,
+            "web_admin_port": 7001,
+            "web_admin_password": "secret",
+        },
+    )
+
+    plugin._rebuild_runtime_dependencies()
+
+    assert plugin._web_admin_server is not None
+    assert plugin._web_admin_server.settings.enabled is True
+    assert plugin._web_admin_server.settings.port == 7001
+
+
 def _make_event(
     message_text: str = "",
     message_components=None,

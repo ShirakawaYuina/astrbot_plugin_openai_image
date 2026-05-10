@@ -146,5 +146,29 @@
         "type": "int",
         "default": 50,
         "hint": "超过数量后会自动清理最旧缓存。"
+    },
+    "web_admin_enabled": {
+        "description": "启用网页后台",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后插件会启动独立网页后台，用于查看历史图库、文生图和图片编辑。必须同时设置登录密码。"
+    },
+    "web_admin_host": {
+        "description": "网页后台监听地址",
+        "type": "string",
+        "default": "127.0.0.1",
+        "hint": "默认仅允许本机访问。Docker 或局域网访问可改为 0.0.0.0，并注意网络与防火墙安全。"
+    },
+    "web_admin_port": {
+        "description": "网页后台端口号",
+        "type": "int",
+        "default": 7865,
+        "hint": "网页后台访问端口，例如 http://127.0.0.1:7865。"
+    },
+    "web_admin_password": {
+        "description": "网页后台登录密码",
+        "type": "string",
+        "default": "",
+        "hint": "后台登录密码。留空时即使启用后台开关也不会启动服务，避免无密码暴露。"
     }
 }
