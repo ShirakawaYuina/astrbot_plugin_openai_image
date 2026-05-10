@@ -136,6 +136,103 @@ def test_server_accepts_bearer_or_cookie_token(tmp_path: Path):
     assert server._is_authorized("Bearer token-2", {}) is False
 
 
+def test_web_admin_logs_request_with_safe_prompt_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    module = _load_module()
+    info_calls: list[tuple[str, tuple[object, ...]]] = []
+
+    class FakeLogger:
+        def info(self, message: str, *args: object) -> None:
+            info_calls.append((message, args))
+
+    monkeypatch.setattr(module, "logger", FakeLogger())
+    server = module.WebAdminServer(
+        plugin=SimpleNamespace(
+            _get_endpoint_type=lambda: "images",
+            _get_configured_model=lambda: "gpt-image-test",
+        ),
+        settings=module.WebAdminSettings(
+            enabled=True,
+            host="127.0.0.1",
+            port=7865,
+            password="secret",
+        ),
+        cache_dir=tmp_path,
+    )
+
+    server._log_web_request(
+        mode="generate",
+        prompt=f"第一行\n{'猫' * 160}",
+        size="1024x1536",
+        quality="high",
+        moderation="low",
+    )
+
+    assert info_calls
+    message, args = info_calls[0]
+    assert "[OpenAIImage][web][%s] 收到请求" in message
+    assert args[0] == "generate"
+    assert "\n" not in str(args[1])
+    assert str(args[1]).endswith("...")
+    assert len(str(args[1])) <= module.LOG_PROMPT_MAX_LENGTH + 3
+    assert args[-2:] == ("images", "gpt-image-test")
+
+
+def test_web_admin_logs_task_success_and_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    module = _load_module()
+    info_calls: list[tuple[str, tuple[object, ...]]] = []
+    warning_calls: list[tuple[str, tuple[object, ...]]] = []
+
+    class FakeLogger:
+        def info(self, message: str, *args: object) -> None:
+            info_calls.append((message, args))
+
+        def warning(self, message: str, *args: object) -> None:
+            warning_calls.append((message, args))
+
+    monkeypatch.setattr(module, "logger", FakeLogger())
+    server = module.WebAdminServer(
+        plugin=SimpleNamespace(),
+        settings=module.WebAdminSettings(
+            enabled=True,
+            host="127.0.0.1",
+            port=7865,
+            password="secret",
+        ),
+        cache_dir=tmp_path,
+    )
+
+    server._log_task_result(
+        {
+            "success": True,
+            "mode": "web_generate",
+            "payload": tmp_path / "result.png",
+            "timings": {"elapsed_ms": 1200, "queue_wait_ms": 30},
+        }
+    )
+    server._log_task_result(
+        {
+            "success": False,
+            "mode": "web_edit",
+            "error_stage": "web_edit",
+            "error_message": "provider failed",
+            "timings": {"elapsed_ms": 90, "queue_wait_ms": 5},
+        }
+    )
+
+    assert info_calls[0][0] == (
+        "[OpenAIImage][web][%s] 任务完成 output=%s elapsed_ms=%s queue_wait_ms=%s"
+    )
+    assert info_calls[0][1] == ("web_generate", "result.png", 1200, 30)
+    assert warning_calls[0][0] == (
+        "[OpenAIImage][web][%s] 任务失败 stage=%s error=%s elapsed_ms=%s queue_wait_ms=%s"
+    )
+    assert warning_calls[0][1] == ("web_edit", "web_edit", "provider failed", 90, 5)
+
+
 @pytest.mark.asyncio
 async def test_image_handler_accepts_http_only_cookie_token(tmp_path: Path):
     module = _load_module()

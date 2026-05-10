@@ -20,6 +20,7 @@ DEFAULT_ADMIN_HOST = "127.0.0.1"
 DEFAULT_ADMIN_PORT = 7865
 TOKEN_BYTES = 24
 AUTH_COOKIE_NAME = "openai_image_admin_token"
+LOG_PROMPT_MAX_LENGTH = 120
 IMAGE_MIME_TYPES = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
@@ -294,16 +295,26 @@ class WebAdminServer:
         prompt = str(payload.get("prompt", "") or "").strip()
         if not prompt:
             return web.json_response({"error": "提示词不能为空"}, status=400)
+        size = _optional_text(payload.get("size"))
+        quality = _option_text(payload.get("quality"), "auto")
+        moderation = _option_text(payload.get("moderation"), "low")
 
         self.plugin._ensure_ready()
+        self._log_web_request(
+            mode="generate",
+            prompt=prompt,
+            size=size or "auto",
+            quality=quality,
+            moderation=moderation,
+        )
         task_result = await self.plugin._task_service.run_task(
             mode="web_generate",
             job_coro=create_generation_job(
                 plugin=self.plugin,
                 prompt=prompt,
-                size=_optional_text(payload.get("size")),
-                quality=_option_text(payload.get("quality"), "auto"),
-                moderation=_option_text(payload.get("moderation"), "low"),
+                size=size,
+                quality=quality,
+                moderation=moderation,
             ),
             stage_name="web_generate",
         )
@@ -330,17 +341,27 @@ class WebAdminServer:
             return web.json_response({"error": "提示词不能为空"}, status=400)
         if not image_data_url:
             return web.json_response({"error": "请上传待编辑图片"}, status=400)
+        size = _optional_text(fields.get("size"))
+        quality = _option_text(fields.get("quality"), "auto")
+        moderation = _option_text(fields.get("moderation"), "low")
 
         self.plugin._ensure_ready()
+        self._log_web_request(
+            mode="edit",
+            prompt=prompt,
+            size=size or "auto",
+            quality=quality,
+            moderation=moderation,
+        )
         task_result = await self.plugin._task_service.run_task(
             mode="web_edit",
             job_coro=create_edit_job(
                 plugin=self.plugin,
                 prompt=prompt,
                 data_url=image_data_url,
-                size=_optional_text(fields.get("size")),
-                quality=_option_text(fields.get("quality"), "auto"),
-                moderation=_option_text(fields.get("moderation"), "low"),
+                size=size,
+                quality=quality,
+                moderation=moderation,
             ),
             stage_name="web_edit",
         )
@@ -376,6 +397,7 @@ class WebAdminServer:
     def _task_response(self, task_result: dict[str, Any]) -> web.Response:
         """将任务服务的统一结果转换为网页 API 响应。"""
 
+        self._log_task_result(task_result)
         if not task_result.get("success"):
             return web.json_response(
                 {
@@ -393,6 +415,67 @@ class WebAdminServer:
             }
         )
 
+    def _log_web_request(
+        self,
+        *,
+        mode: str,
+        prompt: str,
+        size: str,
+        quality: str,
+        moderation: str,
+    ) -> None:
+        """记录网页端发起的图片任务，便于在 AstrBot 后台定位用户操作。"""
+
+        logger.info(
+            "[OpenAIImage][web][%s] 收到请求 prompt=%s size=%s quality=%s moderation=%s endpoint_type=%s model=%s",
+            mode,
+            _truncate_log_text(prompt),
+            size,
+            quality,
+            moderation,
+            self._safe_plugin_value("_get_endpoint_type"),
+            self._safe_plugin_value("_get_configured_model"),
+        )
+
+    def _log_task_result(self, task_result: dict[str, Any]) -> None:
+        """记录网页任务执行结果，失败日志包含阶段和错误摘要。"""
+
+        timings = task_result.get("timings", {})
+        elapsed_ms = timings.get("elapsed_ms")
+        queue_wait_ms = timings.get("queue_wait_ms")
+        mode = str(task_result.get("mode") or "web_unknown")
+        if task_result.get("success"):
+            payload = Path(str(task_result.get("payload", ""))).name or "-"
+            logger.info(
+                "[OpenAIImage][web][%s] 任务完成 output=%s elapsed_ms=%s queue_wait_ms=%s",
+                mode,
+                payload,
+                elapsed_ms,
+                queue_wait_ms,
+            )
+            return
+
+        logger.warning(
+            "[OpenAIImage][web][%s] 任务失败 stage=%s error=%s elapsed_ms=%s queue_wait_ms=%s",
+            mode,
+            str(task_result.get("error_stage") or "-"),
+            _truncate_log_text(str(task_result.get("error_message") or "图片任务失败")),
+            elapsed_ms,
+            queue_wait_ms,
+        )
+
+    def _safe_plugin_value(self, getter_name: str) -> str:
+        """读取插件运行时字段；测试桩或异常状态下使用 unknown 兜底，避免日志反向打断请求。"""
+
+        getter = getattr(self.plugin, getter_name, None)
+        if not callable(getter):
+            return "unknown"
+        try:
+            return str(getter())
+        except Exception as exc:  # noqa: BLE001
+            # 日志字段不是业务主流程，异常只作为摘要输出，避免掩盖真实生图/编辑结果。
+            return f"unknown({exc.__class__.__name__})"
+
 
 def _normalize_port(value: Any) -> int:
     """归一化端口号，越界或非法时回退到默认端口。"""
@@ -404,6 +487,15 @@ def _normalize_port(value: Any) -> int:
     if 1 <= port <= 65535:
         return port
     return DEFAULT_ADMIN_PORT
+
+
+def _truncate_log_text(value: str, max_length: int = LOG_PROMPT_MAX_LENGTH) -> str:
+    """压缩日志文本，去掉换行并截断超长提示词，避免后台日志被大段内容刷屏。"""
+
+    normalized = " ".join(str(value or "").split())
+    if len(normalized) <= max_length:
+        return normalized
+    return f"{normalized[:max_length]}..."
 
 
 def _guess_mime_type(path: Path) -> str:
