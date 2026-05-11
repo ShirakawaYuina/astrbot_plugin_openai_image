@@ -1736,6 +1736,13 @@ ADMIN_HTML = r"""<!doctype html>
       hydrateGalleryImages(images);
     }
 
+    function updateGallerySelection() {
+      // 点击缩略图只需要切换选中态；避免重建流式图库导致浏览器重新计算滚动位置。
+      $("gallery").querySelectorAll(".image-card").forEach((card) => {
+        card.classList.toggle("selected", state.selected && card.dataset.name === state.selected.name);
+      });
+    }
+
     async function hydrateGalleryImages(images) {
       for (const image of images) {
         const thumb = Array.from($("gallery").querySelectorAll(".thumb")).find((item) => item.dataset.cacheKey === thumbnailCacheKey(image));
@@ -1776,7 +1783,7 @@ ADMIN_HTML = r"""<!doctype html>
       $("detailTime").textContent = new Date(image.modified_at * 1000).toLocaleString();
       $("copyImageBtn").disabled = false;
       $("deleteImageBtn").disabled = false;
-      renderGallery();
+      updateGallerySelection();
       $("previewBox").innerHTML = `<img src="${escapeAttribute(imageUrl(image))}" alt="${escapeAttribute(image.name)}">`;
     }
 

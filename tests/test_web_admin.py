@@ -494,6 +494,17 @@ def test_admin_html_gallery_uses_fluid_grid_without_cropping_images():
     assert "aspect-ratio:" not in thumb_body
 
 
+def test_admin_html_selects_gallery_image_without_rerendering_gallery():
+    module = _load_module()
+    select_image_section = module.ADMIN_HTML.split("async function selectImage", 1)[1].split(
+        "function renderResultImages", 1
+    )[0]
+
+    assert "function updateGallerySelection" in module.ADMIN_HTML
+    assert "updateGallerySelection();" in select_image_section
+    assert "renderGallery();" not in select_image_section
+
+
 def test_admin_html_supports_paste_reference_image_preview():
     module = _load_module()
 
