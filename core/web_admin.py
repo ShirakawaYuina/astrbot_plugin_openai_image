@@ -100,7 +100,11 @@ class ImageLibrary:
         return {
             "images": page_images,
             "has_more": start_index + limit < len(images),
-            "next_cursor": page_images[-1]["name"] if len(page_images) == limit else "",
+            "next_cursor": (
+                page_images[-1]["name"]
+                if start_index + limit < len(images) and page_images
+                else ""
+            ),
         }
 
     def get_image_by_name(self, file_name: str) -> dict[str, Any]:

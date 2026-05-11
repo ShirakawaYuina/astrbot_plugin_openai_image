@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import importlib
 import re
-import sys
 import struct
+import sys
 import zlib
 from pathlib import Path
 from types import SimpleNamespace
