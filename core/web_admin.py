@@ -945,6 +945,24 @@ ADMIN_HTML = r"""<!doctype html>
       gap: 10px;
       margin-top: 18px;
     }
+    .settings-grid {
+      display: grid;
+      gap: 14px;
+      max-width: 760px;
+    }
+    .settings-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .cache-info {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.72);
+    }
     .login-mask {
       position: fixed;
       inset: 0;
@@ -1161,11 +1179,27 @@ ADMIN_HTML = r"""<!doctype html>
       </section>
 
       <section id="settingsPanel" class="workspace page-panel hidden">
-        <h2>后台设置</h2>
-        <p class="muted">端口、监听地址和登录密码请在 AstrBot 插件配置中修改，保存后重载插件生效。</p>
-        <div class="detail-row"><span>默认端口</span><strong>7865</strong></div>
-        <div class="detail-row"><span>默认监听</span><strong>127.0.0.1</strong></div>
-        <div class="detail-row"><span>远程访问</span><strong>监听地址改为 0.0.0.0</strong></div>
+        <div class="section-head">
+          <div>
+            <h1>缓存设置</h1>
+            <p class="muted">图片会缓存在当前浏览器中，再次打开图库可优先读取本地缓存。</p>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <div>
+            <label for="localCacheDirectory">缓存目录地址</label>
+            <input id="localCacheDirectory" class="control" type="text" placeholder="例如：远程电脑-浏览器图库缓存" style="width:100%;">
+          </div>
+          <div id="cacheInfo" class="cache-info">
+            <div class="detail-row"><span>缓存目录</span><strong id="cacheDirectoryText">未设置</strong></div>
+            <div class="detail-row"><span>缓存图片</span><strong id="cacheImageCount">0 张</strong></div>
+            <div class="detail-row"><span>占用空间</span><strong id="cacheBytes">0 B</strong></div>
+          </div>
+          <div class="settings-actions">
+            <button id="saveCacheSettingsBtn" class="btn primary" type="button">保存缓存设置</button>
+            <button id="clearLocalCacheBtn" class="btn" type="button">清空本地图片缓存</button>
+          </div>
+        </div>
       </section>
     </main>
 
@@ -1191,8 +1225,12 @@ ADMIN_HTML = r"""<!doctype html>
       selected: null,
       activePanel: "galleryPanel",
       referenceImageFile: null,
+      imageCacheDb: null,
+      localCacheDirectory: localStorage.getItem("openaiImageCacheDirectory") || "浏览器本地图片缓存",
     };
     const $ = (id) => document.getElementById(id);
+    const IMAGE_CACHE_DB_NAME = "openai-image-admin-cache";
+    const IMAGE_CACHE_STORE = "images";
 
     function authHeaders(extra = {}) {
       return { ...extra, Authorization: `Bearer ${state.token}` };
@@ -1263,6 +1301,109 @@ ADMIN_HTML = r"""<!doctype html>
       return `${image.url}?v=${image.modified_at}`;
     }
 
+    function cacheKey(image) {
+      return `${image.name}:${image.modified_at}:${image.size_bytes}`;
+    }
+
+    function openImageCache() {
+      if (state.imageCacheDb) return Promise.resolve(state.imageCacheDb);
+      if (!("indexedDB" in window)) return Promise.resolve(null);
+      return new Promise((resolve) => {
+        const request = indexedDB.open(IMAGE_CACHE_DB_NAME, 1);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains(IMAGE_CACHE_STORE)) {
+            db.createObjectStore(IMAGE_CACHE_STORE, { keyPath: "key" });
+          }
+        };
+        request.onsuccess = () => {
+          state.imageCacheDb = request.result;
+          resolve(state.imageCacheDb);
+        };
+        request.onerror = () => resolve(null);
+      });
+    }
+
+    async function readCachedImage(key) {
+      const db = await openImageCache();
+      if (!db) return null;
+      return new Promise((resolve) => {
+        const request = db.transaction(IMAGE_CACHE_STORE, "readonly").objectStore(IMAGE_CACHE_STORE).get(key);
+        request.onsuccess = () => {
+          const record = request.result || null;
+          resolve(record && record.directory === state.localCacheDirectory ? record : null);
+        };
+        request.onerror = () => resolve(null);
+      });
+    }
+
+    async function writeCachedImage(record) {
+      const db = await openImageCache();
+      if (!db) return;
+      await new Promise((resolve) => {
+        const request = db.transaction(IMAGE_CACHE_STORE, "readwrite").objectStore(IMAGE_CACHE_STORE).put(record);
+        request.onsuccess = () => resolve();
+        request.onerror = () => resolve();
+      });
+    }
+
+    async function getCachedImageUrl(image) {
+      const key = cacheKey(image);
+      const cached = await readCachedImage(key);
+      if (cached && cached.blob) return URL.createObjectURL(cached.blob);
+      const response = await fetch(imageUrl(image));
+      const blob = await response.blob();
+      await writeCachedImage({
+        key,
+        name: image.name,
+        size: blob.size,
+        blob,
+        cached_at: Date.now(),
+        directory: state.localCacheDirectory,
+      });
+      refreshCacheInfo().catch(() => {});
+      return URL.createObjectURL(blob);
+    }
+
+    async function listCachedImages() {
+      const db = await openImageCache();
+      if (!db) return [];
+      return new Promise((resolve) => {
+        const request = db.transaction(IMAGE_CACHE_STORE, "readonly").objectStore(IMAGE_CACHE_STORE).getAll();
+        request.onsuccess = () => resolve((request.result || []).filter((record) => record.directory === state.localCacheDirectory));
+        request.onerror = () => resolve([]);
+      });
+    }
+
+    async function clearLocalImageCache() {
+      const db = await openImageCache();
+      if (!db) return;
+      await new Promise((resolve) => {
+        const request = db.transaction(IMAGE_CACHE_STORE, "readwrite").objectStore(IMAGE_CACHE_STORE).openCursor();
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (!cursor) {
+            resolve();
+            return;
+          }
+          if (cursor.value.directory === state.localCacheDirectory) cursor.delete();
+          cursor.continue();
+        };
+        request.onerror = () => resolve();
+      });
+      await refreshCacheInfo();
+    }
+
+    async function refreshCacheInfo() {
+      $("localCacheDirectory").value = state.localCacheDirectory;
+      $("cacheDirectoryText").textContent = state.localCacheDirectory || "浏览器本地图片缓存";
+      const records = await listCachedImages();
+      const totalBytes = records.reduce((sum, item) => sum + (item.size || 0), 0);
+      $("cacheImageCount").textContent = `${records.length} 张`;
+      $("cacheBytes").textContent = formatBytes(totalBytes);
+      $("cacheSummary").textContent = `${records.length} 张本地缓存，占用 ${formatBytes(totalBytes)}`;
+    }
+
     function resolveSizeValue(presetId, customId) {
       const preset = $(presetId).value;
       if (preset === "custom") return $(customId).value.trim();
@@ -1290,18 +1431,17 @@ ADMIN_HTML = r"""<!doctype html>
       const gallery = $("gallery");
       const images = filteredImages();
       $("imageCount").textContent = state.images.length;
-      $("cacheSummary").textContent = `${state.images.length} 张图片，占用 ${formatBytes(state.images.reduce((sum, item) => sum + item.size_bytes, 0))}`;
+      refreshCacheInfo().catch(() => {});
       if (!images.length) {
-        gallery.innerHTML = '<div class="empty-gallery" style="grid-column:1/-1;">暂无图片，先在下方生成一张。</div>';
+        gallery.innerHTML = '<div class="empty-gallery" style="grid-column:1/-1;">暂无图片，可切换到生图页面创建新图片。</div>';
         return;
       }
       gallery.innerHTML = images.map((image) => {
         const safeName = escapeHtml(image.name);
         const safeAttrName = escapeAttribute(image.name);
-        const safeUrl = escapeAttribute(imageUrl(image));
         return `
         <button class="image-card ${state.selected && state.selected.name === image.name ? "selected" : ""}" type="button" data-name="${safeAttrName}">
-          <img class="thumb" src="${safeUrl}" alt="${safeAttrName}" loading="lazy">
+          <img class="thumb" data-cache-key="${escapeAttribute(cacheKey(image))}" alt="${safeAttrName}" loading="lazy">
           <div class="card-meta">
             <div class="card-name" title="${safeAttrName}">${safeName}</div>
             <div class="card-sub"><span>${formatBytes(image.size_bytes)}</span><span>${new Date(image.modified_at * 1000).toLocaleString()}</span></div>
@@ -1310,32 +1450,61 @@ ADMIN_HTML = r"""<!doctype html>
       `;
       }).join("");
       gallery.querySelectorAll(".image-card").forEach((card) => {
-        card.addEventListener("click", () => selectImage(card.dataset.name));
+        card.addEventListener("click", () => selectImage(card.dataset.name).catch((error) => showToast(error.message)));
       });
+      hydrateGalleryImages(images);
     }
 
-    function selectImage(name) {
+    async function hydrateGalleryImages(images) {
+      for (const image of images) {
+        const thumb = Array.from($("gallery").querySelectorAll(".thumb")).find((item) => item.dataset.cacheKey === cacheKey(image));
+        if (!thumb) continue;
+        try {
+          thumb.src = await getCachedImageUrl(image);
+        } catch (error) {
+          thumb.src = imageUrl(image);
+        }
+      }
+    }
+
+    function clearPreview() {
+      state.selected = null;
+      $("previewBox").classList.add("empty-preview");
+      $("previewBox").textContent = "请选择一张图片";
+      $("detailTitle").textContent = "暂无选中图片";
+      $("detailType").textContent = "-";
+      $("detailSize").textContent = "-";
+      $("detailTime").textContent = "-";
+      $("copyImageBtn").disabled = true;
+    }
+
+    async function selectImage(name) {
       const image = state.images.find((item) => item.name === name);
       if (!image) return;
       state.selected = image;
       $("previewBox").classList.remove("empty-preview");
-      $("previewBox").innerHTML = `<img src="${escapeAttribute(imageUrl(image))}" alt="${escapeAttribute(image.name)}">`;
+      $("previewBox").textContent = "图片加载中...";
       $("detailTitle").textContent = image.name;
       $("detailType").textContent = image.mime_type;
       $("detailSize").textContent = formatBytes(image.size_bytes);
       $("detailTime").textContent = new Date(image.modified_at * 1000).toLocaleString();
       $("copyImageBtn").disabled = false;
       renderGallery();
+      try {
+        const cachedUrl = await getCachedImageUrl(image);
+        $("previewBox").innerHTML = `<img src="${escapeAttribute(cachedUrl)}" alt="${escapeAttribute(image.name)}">`;
+      } catch (error) {
+        $("previewBox").innerHTML = `<img src="${escapeAttribute(imageUrl(image))}" alt="${escapeAttribute(image.name)}">`;
+      }
     }
 
     async function loadImages(preferredName = "") {
       const data = await apiFetch("/api/images");
       state.images = data.images || [];
       if (preferredName) {
-        selectImage(preferredName);
-      } else if (!state.selected && state.images.length) {
-        selectImage(state.images[0].name);
+        await selectImage(preferredName);
       } else {
+        clearPreview();
         renderGallery();
       }
     }
@@ -1370,9 +1539,22 @@ ADMIN_HTML = r"""<!doctype html>
     async function copySelectedImage() {
       if (!state.selected) return;
       try {
-        const response = await fetch(imageUrl(state.selected));
-        const blob = await response.blob();
+        const cached = await readCachedImage(cacheKey(state.selected));
+        let blob = cached && cached.blob;
+        if (!blob) {
+          const response = await fetch(imageUrl(state.selected));
+          blob = await response.blob();
+          await writeCachedImage({
+            key: cacheKey(state.selected),
+            name: state.selected.name,
+            size: blob.size,
+            blob,
+            cached_at: Date.now(),
+            directory: state.localCacheDirectory,
+          });
+        }
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        refreshCacheInfo();
         showToast("图片已复制到剪贴板");
       } catch (error) {
         showToast("复制失败，请双击预览图打开原图后手动复制");
@@ -1406,6 +1588,17 @@ ADMIN_HTML = r"""<!doctype html>
     $("editSizePreset").addEventListener("change", () => syncCustomSize("editSizePreset", "editCustomSize"));
     $("editImage").addEventListener("change", () => setReferenceImageFile($("editImage").files[0]));
     $("pasteImageZone").addEventListener("paste", handlePasteImage);
+    $("saveCacheSettingsBtn").addEventListener("click", () => {
+      const nextDirectory = $("localCacheDirectory").value.trim() || "浏览器本地图片缓存";
+      state.localCacheDirectory = nextDirectory;
+      localStorage.setItem("openaiImageCacheDirectory", nextDirectory);
+      refreshCacheInfo().catch(() => {});
+      showToast("缓存设置已保存");
+    });
+    $("clearLocalCacheBtn").addEventListener("click", async () => {
+      await clearLocalImageCache();
+      showToast("本地图片缓存已清空");
+    });
     document.addEventListener("paste", (event) => {
       if (state.activePanel === "editPanel") handlePasteImage(event);
     });

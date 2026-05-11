@@ -321,6 +321,29 @@ def test_admin_html_supports_paste_reference_image_preview():
     assert "referenceImageFile" in module.ADMIN_HTML
 
 
+def test_admin_html_uses_browser_local_image_cache_and_settings():
+    module = _load_module()
+
+    assert "indexedDB" in module.ADMIN_HTML
+    assert "function openImageCache" in module.ADMIN_HTML
+    assert "function getCachedImageUrl" in module.ADMIN_HTML
+    assert "function refreshCacheInfo" in module.ADMIN_HTML
+    assert "id=\"localCacheDirectory\"" in module.ADMIN_HTML
+    assert "id=\"cacheInfo\"" in module.ADMIN_HTML
+    assert "id=\"clearLocalCacheBtn\"" in module.ADMIN_HTML
+    assert "默认端口" not in module.ADMIN_HTML
+    assert "默认监听" not in module.ADMIN_HTML
+    assert "远程访问" not in module.ADMIN_HTML
+
+
+def test_admin_html_does_not_auto_select_first_history_image():
+    module = _load_module()
+
+    assert "function clearPreview" in module.ADMIN_HTML
+    assert "selectImage(state.images[0].name)" not in module.ADMIN_HTML
+    assert 'if (preferredName) {' in module.ADMIN_HTML
+
+
 @pytest.mark.asyncio
 async def test_create_generation_job_uses_plugin_generate_service(tmp_path: Path):
     module = _load_module()
