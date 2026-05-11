@@ -738,6 +738,28 @@ def test_admin_html_places_workspace_result_above_action_panel():
     assert "生成的图片会显示在这里" in module.ADMIN_HTML
 
 
+def test_admin_html_moves_submit_button_to_prompt_row_and_removes_heavy_result_labels():
+    module = _load_module()
+
+    assert "class=\"prompt-action-row\"" in module.ADMIN_HTML
+    assert "class=\"prompt-action-submit\"" in module.ADMIN_HTML
+    assert "class=\"prompt-action-input\"" in module.ADMIN_HTML
+    assert "<label>生成结果</label>" not in module.ADMIN_HTML
+    assert "<label>编辑结果</label>" not in module.ADMIN_HTML
+    assert "style=\"width:100%; margin-top:16px;\"" not in module.ADMIN_HTML
+
+
+def test_admin_html_defines_result_state_shell_for_generate_and_edit_panels():
+    module = _load_module()
+
+    assert "class=\"result-status\"" in module.ADMIN_HTML
+    assert "class=\"result-grid\"" in module.ADMIN_HTML
+    assert "data-result-mode=\"generate\"" in module.ADMIN_HTML
+    assert "data-result-mode=\"edit\"" in module.ADMIN_HTML
+    assert "function setResultState(" in module.ADMIN_HTML
+    assert "function createResultCard(" in module.ADMIN_HTML
+
+
 def test_admin_html_supports_multiple_reference_thumbnails_on_edit_page():
     module = _load_module()
 
