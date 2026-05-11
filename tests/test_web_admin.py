@@ -329,8 +329,16 @@ def test_admin_html_uses_browser_local_image_cache_and_settings():
     assert "function getCachedImageUrl" in module.ADMIN_HTML
     assert "function refreshCacheInfo" in module.ADMIN_HTML
     assert "id=\"localCacheDirectory\"" in module.ADMIN_HTML
+    assert "readonly" in module.ADMIN_HTML
+    assert "id=\"selectCacheDirectoryBtn\"" in module.ADMIN_HTML
+    assert "id=\"cacheDirectoryPicker\"" in module.ADMIN_HTML
+    assert "webkitdirectory" in module.ADMIN_HTML
+    assert "showDirectoryPicker" in module.ADMIN_HTML
+    assert "function chooseCacheDirectory" in module.ADMIN_HTML
+    assert 'localCacheDirectory").addEventListener("click"' in module.ADMIN_HTML
     assert "id=\"cacheInfo\"" in module.ADMIN_HTML
     assert "id=\"clearLocalCacheBtn\"" in module.ADMIN_HTML
+    assert "保存缓存设置" not in module.ADMIN_HTML
     assert "默认端口" not in module.ADMIN_HTML
     assert "默认监听" not in module.ADMIN_HTML
     assert "远程访问" not in module.ADMIN_HTML

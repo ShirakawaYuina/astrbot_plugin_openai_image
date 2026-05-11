@@ -724,6 +724,10 @@ ADMIN_HTML = r"""<!doctype html>
       padding: 0 12px;
       outline: none;
     }
+    .control[readonly] {
+      cursor: pointer;
+      background: #fff;
+    }
     .btn {
       display: inline-flex;
       align-items: center;
@@ -1188,7 +1192,12 @@ ADMIN_HTML = r"""<!doctype html>
         <div class="settings-grid">
           <div>
             <label for="localCacheDirectory">缓存目录地址</label>
-            <input id="localCacheDirectory" class="control" type="text" placeholder="例如：远程电脑-浏览器图库缓存" style="width:100%;">
+            <div class="settings-actions" style="margin-bottom:10px;">
+              <input id="localCacheDirectory" class="control" type="text" readonly placeholder="未选择文件夹" style="width:100%;">
+              <button id="selectCacheDirectoryBtn" class="btn primary" type="button">选择文件夹</button>
+              <input id="cacheDirectoryPicker" class="hidden" type="file" webkitdirectory directory multiple>
+            </div>
+            <p class="muted" style="margin:0;">点击按钮后选择一个文件夹作为缓存目录；浏览器会优先把图片缓存在本地存储中。</p>
           </div>
           <div id="cacheInfo" class="cache-info">
             <div class="detail-row"><span>缓存目录</span><strong id="cacheDirectoryText">未设置</strong></div>
@@ -1196,7 +1205,6 @@ ADMIN_HTML = r"""<!doctype html>
             <div class="detail-row"><span>占用空间</span><strong id="cacheBytes">0 B</strong></div>
           </div>
           <div class="settings-actions">
-            <button id="saveCacheSettingsBtn" class="btn primary" type="button">保存缓存设置</button>
             <button id="clearLocalCacheBtn" class="btn" type="button">清空本地图片缓存</button>
           </div>
         </div>
@@ -1227,6 +1235,7 @@ ADMIN_HTML = r"""<!doctype html>
       referenceImageFile: null,
       imageCacheDb: null,
       localCacheDirectory: localStorage.getItem("openaiImageCacheDirectory") || "浏览器本地图片缓存",
+      localCacheDirectoryHandle: null,
     };
     const $ = (id) => document.getElementById(id);
     const IMAGE_CACHE_DB_NAME = "openai-image-admin-cache";
@@ -1339,12 +1348,27 @@ ADMIN_HTML = r"""<!doctype html>
 
     async function writeCachedImage(record) {
       const db = await openImageCache();
-      if (!db) return;
-      await new Promise((resolve) => {
-        const request = db.transaction(IMAGE_CACHE_STORE, "readwrite").objectStore(IMAGE_CACHE_STORE).put(record);
-        request.onsuccess = () => resolve();
-        request.onerror = () => resolve();
-      });
+      if (db) {
+        await new Promise((resolve) => {
+          const request = db.transaction(IMAGE_CACHE_STORE, "readwrite").objectStore(IMAGE_CACHE_STORE).put(record);
+          request.onsuccess = () => resolve();
+          request.onerror = () => resolve();
+        });
+      }
+      await writeImageToSelectedDirectory(record.name, record.blob);
+    }
+
+    async function writeImageToSelectedDirectory(fileName, blob) {
+      const handle = state.localCacheDirectoryHandle;
+      if (!handle || !blob || typeof handle.getFileHandle !== "function") return;
+      try {
+        const fileHandle = await handle.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+      } catch (error) {
+        showToast("浏览器未授权写入所选文件夹，已保存在本地缓存中");
+      }
     }
 
     async function getCachedImageUrl(image) {
@@ -1402,6 +1426,36 @@ ADMIN_HTML = r"""<!doctype html>
       $("cacheImageCount").textContent = `${records.length} 张`;
       $("cacheBytes").textContent = formatBytes(totalBytes);
       $("cacheSummary").textContent = `${records.length} 张本地缓存，占用 ${formatBytes(totalBytes)}`;
+    }
+
+    function updateCacheDirectory(directoryName, directoryHandle = null) {
+      state.localCacheDirectory = directoryName || "浏览器本地图片缓存";
+      state.localCacheDirectoryHandle = directoryHandle;
+      localStorage.setItem("openaiImageCacheDirectory", state.localCacheDirectory);
+      refreshCacheInfo().catch(() => {});
+    }
+
+    async function chooseCacheDirectory() {
+      if ("showDirectoryPicker" in window) {
+        try {
+          const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+          updateCacheDirectory(directoryHandle.name, directoryHandle);
+          showToast("缓存目录已选择");
+          return;
+        } catch (error) {
+          if (error && error.name === "AbortError") return;
+        }
+      }
+      $("cacheDirectoryPicker").click();
+    }
+
+    function handleFallbackDirectoryPick() {
+      const files = $("cacheDirectoryPicker").files;
+      if (!files || !files.length) return;
+      const relativePath = files[0].webkitRelativePath || "";
+      const directoryName = relativePath.split("/")[0] || "浏览器本地图片缓存";
+      updateCacheDirectory(directoryName);
+      showToast("缓存目录已选择");
     }
 
     function resolveSizeValue(presetId, customId) {
@@ -1588,13 +1642,9 @@ ADMIN_HTML = r"""<!doctype html>
     $("editSizePreset").addEventListener("change", () => syncCustomSize("editSizePreset", "editCustomSize"));
     $("editImage").addEventListener("change", () => setReferenceImageFile($("editImage").files[0]));
     $("pasteImageZone").addEventListener("paste", handlePasteImage);
-    $("saveCacheSettingsBtn").addEventListener("click", () => {
-      const nextDirectory = $("localCacheDirectory").value.trim() || "浏览器本地图片缓存";
-      state.localCacheDirectory = nextDirectory;
-      localStorage.setItem("openaiImageCacheDirectory", nextDirectory);
-      refreshCacheInfo().catch(() => {});
-      showToast("缓存设置已保存");
-    });
+    $("localCacheDirectory").addEventListener("click", () => chooseCacheDirectory().catch((error) => showToast(error.message)));
+    $("selectCacheDirectoryBtn").addEventListener("click", () => chooseCacheDirectory().catch((error) => showToast(error.message)));
+    $("cacheDirectoryPicker").addEventListener("change", handleFallbackDirectoryPick);
     $("clearLocalCacheBtn").addEventListener("click", async () => {
       await clearLocalImageCache();
       showToast("本地图片缓存已清空");
