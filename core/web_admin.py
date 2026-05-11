@@ -978,12 +978,20 @@ ADMIN_HTML = r"""<!doctype html>
     .preview {
       padding: 22px;
       background: rgba(255, 255, 255, 0.88);
+      overflow-x: hidden;
     }
     .preview-head {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 18px;
+      gap: 10px;
+      min-width: 0;
+    }
+    .preview .settings-actions {
+      flex: 0 1 auto;
+      min-width: 0;
+      justify-content: flex-end;
     }
     .preview-box {
       display: grid;
@@ -1019,6 +1027,7 @@ ADMIN_HTML = r"""<!doctype html>
       font-size: 18px;
       line-height: 1.35;
       word-break: break-all;
+      min-width: 0;
     }
     .detail-row {
       display: flex;
@@ -1028,11 +1037,14 @@ ADMIN_HTML = r"""<!doctype html>
       border-bottom: 1px solid var(--line);
       color: var(--muted);
       font-size: 13px;
+      min-width: 0;
     }
     .detail-row strong {
       color: #263247;
       text-align: right;
       word-break: break-word;
+      overflow-wrap: anywhere;
+      min-width: 0;
     }
     .detail-row.detail-row-block {
       display: block;
@@ -1130,7 +1142,7 @@ ADMIN_HTML = r"""<!doctype html>
       }
       .nav-group { display: flex; margin: 0; gap: 8px; }
       .main, .preview { padding: 16px; border: 0; }
-      .preview { position: static; height: auto; overflow: visible; }
+      .preview { position: static; height: auto; overflow-x: hidden; overflow-y: visible; }
       .form-grid { grid-template-columns: 1fr; }
       .field-row { grid-template-columns: repeat(2, 1fr); }
       .topbar, .section-head { align-items: stretch; flex-direction: column; }

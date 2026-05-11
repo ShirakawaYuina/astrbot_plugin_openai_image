@@ -457,6 +457,16 @@ def test_admin_html_centers_preview_image_and_shows_prompt_size_metadata():
     assert "formatPrompt(image.prompt)" in module.ADMIN_HTML
 
 
+def test_admin_html_preview_sidebar_disables_horizontal_scrolling():
+    module = _load_module()
+
+    assert "overflow-x: hidden;" in module.ADMIN_HTML
+    assert "min-width: 0;" in module.ADMIN_HTML
+    assert "overflow-wrap: anywhere;" in module.ADMIN_HTML
+    assert ".preview .settings-actions" in module.ADMIN_HTML
+    assert ".preview { position: static; height: auto; overflow-x: hidden; overflow-y: visible; }" in module.ADMIN_HTML
+
+
 def test_admin_html_caches_thumbnails_before_original_images():
     module = _load_module()
 
