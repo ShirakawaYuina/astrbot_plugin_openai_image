@@ -326,28 +326,56 @@ def test_admin_html_uses_browser_local_image_cache_and_settings():
 
     assert "indexedDB" in module.ADMIN_HTML
     assert "function openImageCache" in module.ADMIN_HTML
-    assert "function getCachedImageUrl" in module.ADMIN_HTML
+    assert "function getCachedThumbnailUrl" in module.ADMIN_HTML
+    assert "function getCachedOriginalUrl" in module.ADMIN_HTML
     assert "function refreshCacheInfo" in module.ADMIN_HTML
-    assert "id=\"localCacheDirectory\"" in module.ADMIN_HTML
-    assert "缓存文件夹" in module.ADMIN_HTML
-    assert "浏览器安全限制" in module.ADMIN_HTML
-    assert "完整本机路径" in module.ADMIN_HTML
+    assert "id=\"localCacheDirectory\"" not in module.ADMIN_HTML
+    assert "缓存文件夹" not in module.ADMIN_HTML
+    assert "浏览器安全限制" not in module.ADMIN_HTML
+    assert "完整本机路径" not in module.ADMIN_HTML
     assert "缓存目录地址" not in module.ADMIN_HTML
-    assert "readonly" in module.ADMIN_HTML
-    assert "id=\"selectCacheDirectoryBtn\"" in module.ADMIN_HTML
-    assert "showDirectoryPicker" in module.ADMIN_HTML
-    assert "function chooseCacheDirectory" in module.ADMIN_HTML
-    assert 'localCacheDirectory").addEventListener("click"' in module.ADMIN_HTML
+    assert "type=\"text\" readonly" not in module.ADMIN_HTML
+    assert "id=\"selectCacheDirectoryBtn\"" not in module.ADMIN_HTML
+    assert "showDirectoryPicker" not in module.ADMIN_HTML
+    assert "function chooseCacheDirectory" not in module.ADMIN_HTML
+    assert "openaiImageCacheDirectory" not in module.ADMIN_HTML
+    assert "localCacheDirectoryHandle" not in module.ADMIN_HTML
     assert "id=\"cacheDirectoryPicker\"" not in module.ADMIN_HTML
     assert "webkitdirectory" not in module.ADMIN_HTML
     assert "handleFallbackDirectoryPick" not in module.ADMIN_HTML
-    assert "不支持选择可写文件夹" in module.ADMIN_HTML
+    assert "不支持选择可写文件夹" not in module.ADMIN_HTML
     assert "id=\"cacheInfo\"" in module.ADMIN_HTML
     assert "id=\"clearLocalCacheBtn\"" in module.ADMIN_HTML
     assert "保存缓存设置" not in module.ADMIN_HTML
     assert "默认端口" not in module.ADMIN_HTML
     assert "默认监听" not in module.ADMIN_HTML
     assert "远程访问" not in module.ADMIN_HTML
+
+
+def test_admin_html_keeps_sidebars_fixed_on_desktop_scroll():
+    module = _load_module()
+
+    assert ".sidebar,\n    .preview {" in module.ADMIN_HTML
+    assert "position: sticky;" in module.ADMIN_HTML
+    assert "height: 100vh;" in module.ADMIN_HTML
+    assert "overflow-y: auto;" in module.ADMIN_HTML
+    assert ".app-shell { display: block; }" in module.ADMIN_HTML
+
+
+def test_admin_html_caches_thumbnails_before_original_images():
+    module = _load_module()
+
+    assert "function thumbnailCacheKey(image)" in module.ADMIN_HTML
+    assert "function originalCacheKey(image)" in module.ADMIN_HTML
+    assert "kind: \"thumbnail\"" in module.ADMIN_HTML
+    assert "kind: \"original\"" in module.ADMIN_HTML
+    assert "thumb.src = await getCachedThumbnailUrl(image);" in module.ADMIN_HTML
+    assert "const originalUrl = await getCachedOriginalUrl(state.selected);" in module.ADMIN_HTML
+    assert "previewBox\").innerHTML = `<img src=\"${escapeAttribute(imageUrl(image))}\"" in module.ADMIN_HTML
+    assert "const cached = await readCachedImage(originalCacheKey(state.selected));" not in module.ADMIN_HTML
+    assert "key: originalCacheKey(state.selected)" not in module.ADMIN_HTML
+    assert "const cachedUrl = await getCachedOriginalUrl(image);" not in module.ADMIN_HTML
+    assert "thumb.src = await getCachedImageUrl(image);" not in module.ADMIN_HTML
 
 
 def test_admin_html_does_not_auto_select_first_history_image():
