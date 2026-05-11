@@ -1996,6 +1996,20 @@ ADMIN_HTML = r"""<!doctype html>
       `;
     }
 
+    function appendResultImage(targetGridId, image) {
+      const grid = $(targetGridId);
+      if (!grid || !image || !image.name) return;
+      grid.insertAdjacentHTML("beforeend", createResultCard(image));
+      const card = grid.lastElementChild;
+      const imageNode = card && card.querySelector("img");
+      if (!imageNode) return;
+      imageNode.addEventListener("dblclick", () => {
+        const imageName = imageNode.closest(".result-card")?.dataset.imageName || "";
+        const match = state.images.find((item) => item.name === imageName);
+        if (match) window.open(imageUrl(match), "_blank", "noopener");
+      });
+    }
+
     function setResultState(targetId, status, message = "") {
       // 这里只维护结果容器的状态样式和轻量状态文案，后续流式追加与分页加载会复用这层壳。
       const panelConfig = resultPanelConfig(targetId);
@@ -2125,17 +2139,17 @@ ADMIN_HTML = r"""<!doctype html>
         return;
       }
 
-      grid.innerHTML = images.map((image) => createResultCard(image)).join("");
-      setResultState(targetId, "success");
-      grid.querySelectorAll("img").forEach((imageNode, index) => {
-        imageNode.addEventListener("dblclick", () => window.open(imageUrl(images[index]), "_blank", "noopener"));
+      images.forEach((image) => {
+        appendResultImage(panelConfig.gridId, image);
       });
+      setResultState(targetId, "success");
     }
 
     async function loadImages(preferredName = "") {
       const data = await apiFetch("/api/images");
       state.images = data.images || [];
       if (preferredName) {
+        renderGallery();
         await selectImage(preferredName);
       } else {
         clearPreview();
@@ -2265,10 +2279,10 @@ ADMIN_HTML = r"""<!doctype html>
       event.preventDefault();
       const submit = $("generateSubmit");
       submit.disabled = true;
+      $("generateResultGrid").innerHTML = "";
+      $("generateResultEmpty").textContent = "正在生成图片，完成后会同步进入右侧预览和历史图库。";
+      setResultState("generateResultBox", "loading", "生成中");
       try {
-        $("generateResultGrid").innerHTML = "";
-        $("generateResultEmpty").textContent = "正在生成图片，完成后会同步进入右侧预览和历史图库。";
-        setResultState("generateResultBox", "loading");
         const resultImages = [];
         const count = Math.max(1, Math.min(4, Number($("generateCount").value || 1)));
         for (let index = 0; index < count; index += 1) {
@@ -2282,16 +2296,23 @@ ADMIN_HTML = r"""<!doctype html>
               moderation: $("generateModeration").value,
             }),
           });
-          if (data.image && data.image.name) resultImages.push(data.image.name);
+          if (data.image && data.image.name) {
+            resultImages.push(data.image.name);
+            state.images.unshift(data.image);
+            renderGallery();
+            appendResultImage("generateResultGrid", data.image);
+            // 第一张图返回后就切到 streaming，让用户知道后续批次仍在继续而不是界面卡住。
+            setResultState("generateResultBox", "streaming", `已生成 ${resultImages.length} 张`);
+          }
         }
+        setResultState("generateResultBox", "success", "生成完成");
         showToast("图片生成完成");
         const lastImage = resultImages[resultImages.length - 1] || "";
         await loadImages(lastImage);
-        renderResultImages("generateResultBox", resultImages);
       } catch (error) {
         $("generateResultGrid").innerHTML = "";
         $("generateResultEmpty").textContent = error.message || "生成失败，请稍后重试。";
-        setResultState("generateResultBox", "error");
+        setResultState("generateResultBox", "error", error.message);
         showToast(error.message);
       } finally {
         submit.disabled = false;
@@ -2302,14 +2323,14 @@ ADMIN_HTML = r"""<!doctype html>
       event.preventDefault();
       const submit = $("editSubmit");
       submit.disabled = true;
+      $("editResultGrid").innerHTML = "";
+      $("editResultEmpty").textContent = "正在编辑图片，完成后会同步进入右侧预览和历史图库。";
+      setResultState("editResultBox", "loading", "编辑中");
       try {
-        $("editResultGrid").innerHTML = "";
-        $("editResultEmpty").textContent = "正在编辑图片，完成后会同步进入右侧预览和历史图库。";
-        setResultState("editResultBox", "loading");
         const files = state.referenceImageFiles;
         if (!files.length) {
           $("editResultEmpty").textContent = "请先上传或粘贴参考图片。";
-          setResultState("editResultBox", "error");
+          setResultState("editResultBox", "error", "请先上传或粘贴参考图片。");
           showToast("请先上传或粘贴参考图片");
           return;
         }
@@ -2323,13 +2344,18 @@ ADMIN_HTML = r"""<!doctype html>
         });
         const data = await apiFetch("/api/edit", { method: "POST", body });
         const lastImage = data.image && data.image.name;
+        if (data.image && data.image.name) {
+          state.images.unshift(data.image);
+          renderGallery();
+          appendResultImage("editResultGrid", data.image);
+        }
+        setResultState("editResultBox", "success", "编辑完成");
         showToast("图片编辑完成");
         await loadImages(lastImage);
-        renderResultImages("editResultBox", [lastImage]);
       } catch (error) {
         $("editResultGrid").innerHTML = "";
         $("editResultEmpty").textContent = error.message || "编辑失败，请稍后重试。";
-        setResultState("editResultBox", "error");
+        setResultState("editResultBox", "error", error.message);
         showToast(error.message);
       } finally {
         submit.disabled = false;

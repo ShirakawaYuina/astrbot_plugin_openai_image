@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import pytest
 from yarl import URL
 
-
 ROOT = Path(__file__).resolve().parents[1]
 PARENT = ROOT.parent
 for candidate in (str(PARENT), str(ROOT)):
@@ -41,7 +40,11 @@ def _write_test_image(path: Path, size: tuple[int, int]) -> None:
         + compressed
         + struct.pack(">I", zlib.crc32(b"IDAT" + compressed) & 0xFFFFFFFF)
     )
-    iend = struct.pack(">I", 0) + b"IEND" + struct.pack(">I", zlib.crc32(b"IEND") & 0xFFFFFFFF)
+    iend = (
+        struct.pack(">I", 0)
+        + b"IEND"
+        + struct.pack(">I", zlib.crc32(b"IEND") & 0xFFFFFFFF)
+    )
     path.write_bytes(signature + ihdr + idat + iend)
 
 
@@ -111,7 +114,9 @@ def test_image_library_list_images_page_returns_cursor_and_dimensions(tmp_path: 
     _write_test_image(tmp_path / "20260511_120003_portrait.png", (1024, 1536))
     library = module.ImageLibrary(tmp_path)
 
-    first_page = library.list_images_page(limit=2, cursor="", keyword="", type_filter="", sort="latest")
+    first_page = library.list_images_page(
+        limit=2, cursor="", keyword="", type_filter="", sort="latest"
+    )
 
     assert [item["name"] for item in first_page["images"]] == [
         "20260511_120003_portrait.png",
@@ -119,12 +124,16 @@ def test_image_library_list_images_page_returns_cursor_and_dimensions(tmp_path: 
     ]
     assert first_page["images"][0]["width"] == 1024
     assert first_page["images"][0]["height"] == 1536
-    assert first_page["images"][0]["aspect_ratio"] == pytest.approx(1024 / 1536, rel=1e-3)
+    assert first_page["images"][0]["aspect_ratio"] == pytest.approx(
+        1024 / 1536, rel=1e-3
+    )
     assert first_page["has_more"] is True
     assert first_page["next_cursor"] == "20260511_120002_square.png"
 
 
-def test_image_library_list_images_page_returns_empty_for_unknown_cursor(tmp_path: Path):
+def test_image_library_list_images_page_returns_empty_for_unknown_cursor(
+    tmp_path: Path,
+):
     module = _load_module()
     _write_test_image(tmp_path / "a.png", (1024, 1024))
     _write_test_image(tmp_path / "b.png", (1024, 1024))
@@ -296,7 +305,10 @@ async def test_list_images_handler_respects_limit_cursor_and_sort(tmp_path: Path
     finally:
         await runner.cleanup()
 
-    assert [item["name"] for item in payload["images"]] == ["a_landscape.png", "b_square.png"]
+    assert [item["name"] for item in payload["images"]] == [
+        "a_landscape.png",
+        "b_square.png",
+    ]
     assert payload["has_more"] is True
     assert payload["next_cursor"] == "b_square.png"
 
@@ -648,35 +660,35 @@ def test_admin_html_escapes_image_names_and_avoids_url_tokens():
 def test_admin_html_uses_separate_generate_edit_pages_and_size_presets():
     module = _load_module()
 
-    assert "id=\"generatePanel\"" in module.ADMIN_HTML
-    assert "id=\"editPanel\"" in module.ADMIN_HTML
-    assert "id=\"generateForm\"" in module.ADMIN_HTML
-    assert "id=\"editForm\"" in module.ADMIN_HTML
-    assert "id=\"generateSizePreset\"" in module.ADMIN_HTML
-    assert "id=\"generateCustomSize\"" in module.ADMIN_HTML
-    assert "id=\"editSizePreset\"" in module.ADMIN_HTML
-    assert "id=\"editCustomSize\"" in module.ADMIN_HTML
-    assert "value=\"custom\"" in module.ADMIN_HTML
+    assert 'id="generatePanel"' in module.ADMIN_HTML
+    assert 'id="editPanel"' in module.ADMIN_HTML
+    assert 'id="generateForm"' in module.ADMIN_HTML
+    assert 'id="editForm"' in module.ADMIN_HTML
+    assert 'id="generateSizePreset"' in module.ADMIN_HTML
+    assert 'id="generateCustomSize"' in module.ADMIN_HTML
+    assert 'id="editSizePreset"' in module.ADMIN_HTML
+    assert 'id="editCustomSize"' in module.ADMIN_HTML
+    assert 'value="custom"' in module.ADMIN_HTML
     assert "function resolveSizeValue" in module.ADMIN_HTML
-    assert "id=\"taskPanel\"" not in module.ADMIN_HTML
-    assert "id=\"taskForm\"" not in module.ADMIN_HTML
+    assert 'id="taskPanel"' not in module.ADMIN_HTML
+    assert 'id="taskForm"' not in module.ADMIN_HTML
     assert "data-scroll-target" not in module.ADMIN_HTML
     assert "function showPanel" in module.ADMIN_HTML
-    assert "data-panel=\"generatePanel\"" in module.ADMIN_HTML
-    assert "data-panel=\"editPanel\"" in module.ADMIN_HTML
+    assert 'data-panel="generatePanel"' in module.ADMIN_HTML
+    assert 'data-panel="editPanel"' in module.ADMIN_HTML
 
 
 def test_admin_html_preview_actions_match_requested_gallery_flow():
     module = _load_module()
 
-    assert "id=\"viewOriginalBtn\"" in module.ADMIN_HTML
+    assert 'id="viewOriginalBtn"' in module.ADMIN_HTML
     assert ">查看原图<" in module.ADMIN_HTML
-    assert "addEventListener(\"dblclick\"" in module.ADMIN_HTML
+    assert 'addEventListener("dblclick"' in module.ADMIN_HTML
     assert "openSelectedOriginalImage" in module.ADMIN_HTML
     assert "copySelectedImage" not in module.ADMIN_HTML
     assert "ClipboardItem" not in module.ADMIN_HTML
     assert "复制图片" not in module.ADMIN_HTML
-    assert "id=\"deleteImageBtn\"" in module.ADMIN_HTML
+    assert 'id="deleteImageBtn"' in module.ADMIN_HTML
     assert "deleteSelectedImage" in module.ADMIN_HTML
     assert 'method: "DELETE"' in module.ADMIN_HTML
     assert "clearImageCacheRecords" in module.ADMIN_HTML
@@ -694,7 +706,9 @@ def test_admin_html_gallery_uses_left_to_right_grid_without_cropping_images():
     gallery_body = gallery_rule.group("body")
     thumb_body = thumb_rule.group("body")
     assert "display: grid;" in gallery_body
-    assert "grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));" in gallery_body
+    assert (
+        "grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));" in gallery_body
+    )
     assert "align-items: start;" in gallery_body
     assert "column-width:" not in gallery_body
     assert "column-gap:" not in gallery_body
@@ -708,9 +722,9 @@ def test_admin_html_gallery_uses_left_to_right_grid_without_cropping_images():
 
 def test_admin_html_selects_gallery_image_without_rerendering_gallery():
     module = _load_module()
-    select_image_section = module.ADMIN_HTML.split("async function selectImage", 1)[1].split(
-        "function renderResultImages", 1
-    )[0]
+    select_image_section = module.ADMIN_HTML.split("async function selectImage", 1)[
+        1
+    ].split("function renderResultImages", 1)[0]
 
     assert "function updateGallerySelection" in module.ADMIN_HTML
     assert "updateGallerySelection();" in select_image_section
@@ -729,33 +743,36 @@ def test_admin_html_supports_paste_reference_image_preview():
 def test_admin_html_places_workspace_result_above_action_panel():
     module = _load_module()
 
-    assert "class=\"workflow-layout\"" in module.ADMIN_HTML
-    assert "class=\"workspace-result-panel\"" in module.ADMIN_HTML
-    assert "class=\"action-panel\"" in module.ADMIN_HTML
-    assert 'id="generateForm" class="action-panel action-panel-single"' in module.ADMIN_HTML
-    assert "id=\"generateResultBox\"" in module.ADMIN_HTML
-    assert "id=\"editResultBox\"" in module.ADMIN_HTML
+    assert 'class="workflow-layout"' in module.ADMIN_HTML
+    assert 'class="workspace-result-panel"' in module.ADMIN_HTML
+    assert 'class="action-panel"' in module.ADMIN_HTML
+    assert (
+        'id="generateForm" class="action-panel action-panel-single"'
+        in module.ADMIN_HTML
+    )
+    assert 'id="generateResultBox"' in module.ADMIN_HTML
+    assert 'id="editResultBox"' in module.ADMIN_HTML
     assert "生成的图片会显示在这里" in module.ADMIN_HTML
 
 
 def test_admin_html_moves_submit_button_to_prompt_row_and_removes_heavy_result_labels():
     module = _load_module()
 
-    assert "class=\"prompt-action-row\"" in module.ADMIN_HTML
-    assert "class=\"prompt-action-submit\"" in module.ADMIN_HTML
-    assert "class=\"prompt-action-input\"" in module.ADMIN_HTML
+    assert 'class="prompt-action-row"' in module.ADMIN_HTML
+    assert 'class="prompt-action-submit"' in module.ADMIN_HTML
+    assert 'class="prompt-action-input"' in module.ADMIN_HTML
     assert "<label>生成结果</label>" not in module.ADMIN_HTML
     assert "<label>编辑结果</label>" not in module.ADMIN_HTML
-    assert "style=\"width:100%; margin-top:16px;\"" not in module.ADMIN_HTML
+    assert 'style="width:100%; margin-top:16px;"' not in module.ADMIN_HTML
 
 
 def test_admin_html_defines_result_state_shell_for_generate_and_edit_panels():
     module = _load_module()
 
-    assert "class=\"result-status\"" in module.ADMIN_HTML
-    assert "class=\"result-grid\"" in module.ADMIN_HTML
-    assert "data-result-mode=\"generate\"" in module.ADMIN_HTML
-    assert "data-result-mode=\"edit\"" in module.ADMIN_HTML
+    assert 'class="result-status"' in module.ADMIN_HTML
+    assert 'class="result-grid"' in module.ADMIN_HTML
+    assert 'data-result-mode="generate"' in module.ADMIN_HTML
+    assert 'data-result-mode="edit"' in module.ADMIN_HTML
     assert "function setResultState(" in module.ADMIN_HTML
     assert "function createResultCard(" in module.ADMIN_HTML
 
@@ -783,28 +800,58 @@ def test_admin_html_uses_result_panel_config_and_span_threshold_rules():
 
 def test_admin_html_shell_helpers_keep_result_state_transitions_explicit():
     module = _load_module()
-    set_result_state_section = module.ADMIN_HTML.split("function setResultState", 1)[1].split(
-        "function filteredImages", 1
-    )[0]
+    set_result_state_section = module.ADMIN_HTML.split("function setResultState", 1)[
+        1
+    ].split("function filteredImages", 1)[0]
     render_result_images_section = module.ADMIN_HTML.split(
         "function renderResultImages", 1
     )[1].split("async function loadImages", 1)[0]
 
-    assert 'box.classList.remove("state-empty", "state-loading", "state-success", "state-error", "state-streaming");' in set_result_state_section
-    assert 'box.classList.add(`state-${status}`);' in set_result_state_section
+    assert (
+        'box.classList.remove("state-empty", "state-loading", "state-success", "state-error", "state-streaming");'
+        in set_result_state_section
+    )
+    assert "box.classList.add(`state-${status}`);" in set_result_state_section
     assert 'grid.innerHTML = "";' in render_result_images_section
     assert 'setResultState(targetId, "empty");' in render_result_images_section
     assert 'setResultState(targetId, "success");' in render_result_images_section
+
+
+def test_admin_html_streams_generate_results_before_loop_completion():
+    module = _load_module()
+    submit_section = module.ADMIN_HTML.split(
+        '$("generateForm").addEventListener("submit"', 1
+    )[1]
+
+    assert 'setResultState("generateResultBox", "loading"' in submit_section
+    assert 'appendResultImage("generateResultGrid", data.image);' in submit_section
+    assert 'setResultState("generateResultBox", "streaming"' in submit_section
+    assert 'setResultState("generateResultBox", "success"' in submit_section
+    assert (
+        'renderResultImages("generateResultBox", resultImages);' not in submit_section
+    )
+
+
+def test_admin_html_sets_error_state_when_generate_or_edit_request_fails():
+    module = _load_module()
+
+    assert (
+        'setResultState("generateResultBox", "error", error.message);'
+        in module.ADMIN_HTML
+    )
+    assert (
+        'setResultState("editResultBox", "error", error.message);' in module.ADMIN_HTML
+    )
 
 
 def test_admin_html_supports_multiple_reference_thumbnails_on_edit_page():
     module = _load_module()
 
     assert "multiple" in module.ADMIN_HTML
-    assert "id=\"referenceThumbs\"" in module.ADMIN_HTML
-    assert "class=\"reference-thumbs\"" in module.ADMIN_HTML
+    assert 'id="referenceThumbs"' in module.ADMIN_HTML
+    assert 'class="reference-thumbs"' in module.ADMIN_HTML
     assert "renderReferenceThumbnails" in module.ADMIN_HTML
-    assert "body.append(\"image\", file);" in module.ADMIN_HTML
+    assert 'body.append("image", file);' in module.ADMIN_HTML
 
 
 def test_admin_html_uses_browser_local_image_cache_and_settings():
@@ -815,27 +862,33 @@ def test_admin_html_uses_browser_local_image_cache_and_settings():
     assert "function getCachedThumbnailUrl" in module.ADMIN_HTML
     assert "function getCachedOriginalUrl" in module.ADMIN_HTML
     assert "function refreshCacheInfo" in module.ADMIN_HTML
-    assert "id=\"localCacheDirectory\"" not in module.ADMIN_HTML
+    assert 'id="localCacheDirectory"' not in module.ADMIN_HTML
     assert "缓存文件夹" not in module.ADMIN_HTML
     assert "浏览器安全限制" not in module.ADMIN_HTML
     assert "完整本机路径" not in module.ADMIN_HTML
     assert "缓存目录地址" not in module.ADMIN_HTML
-    assert "type=\"text\" readonly" not in module.ADMIN_HTML
-    assert "id=\"selectCacheDirectoryBtn\"" not in module.ADMIN_HTML
+    assert 'type="text" readonly' not in module.ADMIN_HTML
+    assert 'id="selectCacheDirectoryBtn"' not in module.ADMIN_HTML
     assert "showDirectoryPicker" not in module.ADMIN_HTML
     assert "function chooseCacheDirectory" not in module.ADMIN_HTML
     assert "openaiImageCacheDirectory" not in module.ADMIN_HTML
     assert "localCacheDirectoryHandle" not in module.ADMIN_HTML
-    assert "id=\"cacheDirectoryPicker\"" not in module.ADMIN_HTML
+    assert 'id="cacheDirectoryPicker"' not in module.ADMIN_HTML
     assert "webkitdirectory" not in module.ADMIN_HTML
     assert "handleFallbackDirectoryPick" not in module.ADMIN_HTML
     assert "不支持选择可写文件夹" not in module.ADMIN_HTML
-    assert "id=\"cacheInfo\"" in module.ADMIN_HTML
-    assert "id=\"clearLocalCacheBtn\"" in module.ADMIN_HTML
-    assert "id=\"thumbnailCacheInfo\"" in module.ADMIN_HTML
-    assert "id=\"originalCacheInfo\"" in module.ADMIN_HTML
-    assert "const thumbnailRecords = records.filter((item) => item.kind === \"thumbnail\");" in module.ADMIN_HTML
-    assert "const originalRecords = records.filter((item) => item.kind === \"original\");" in module.ADMIN_HTML
+    assert 'id="cacheInfo"' in module.ADMIN_HTML
+    assert 'id="clearLocalCacheBtn"' in module.ADMIN_HTML
+    assert 'id="thumbnailCacheInfo"' in module.ADMIN_HTML
+    assert 'id="originalCacheInfo"' in module.ADMIN_HTML
+    assert (
+        'const thumbnailRecords = records.filter((item) => item.kind === "thumbnail");'
+        in module.ADMIN_HTML
+    )
+    assert (
+        'const originalRecords = records.filter((item) => item.kind === "original");'
+        in module.ADMIN_HTML
+    )
     assert "保存缓存设置" not in module.ADMIN_HTML
     assert "默认端口" not in module.ADMIN_HTML
     assert "默认监听" not in module.ADMIN_HTML
@@ -856,7 +909,10 @@ def test_admin_html_hides_preview_sidebar_outside_gallery_page():
     module = _load_module()
 
     assert "function updatePreviewVisibility" in module.ADMIN_HTML
-    assert 'document.body.classList.toggle("preview-hidden", panelId !== "galleryPanel");' in module.ADMIN_HTML
+    assert (
+        'document.body.classList.toggle("preview-hidden", panelId !== "galleryPanel");'
+        in module.ADMIN_HTML
+    )
     assert "body.preview-hidden .preview" in module.ADMIN_HTML
     assert "body.preview-hidden .app-shell" in module.ADMIN_HTML
     assert "settings-active" not in module.ADMIN_HTML
@@ -864,7 +920,9 @@ def test_admin_html_hides_preview_sidebar_outside_gallery_page():
 
 def test_admin_html_centers_preview_image_and_shows_prompt_size_metadata():
     module = _load_module()
-    preview_image_rule = re.search(r"\.preview-box img\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
+    preview_image_rule = re.search(
+        r"\.preview-box img\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML
+    )
 
     assert "display: grid;" in module.ADMIN_HTML
     assert "place-items: center;" in module.ADMIN_HTML
@@ -875,8 +933,8 @@ def test_admin_html_centers_preview_image_and_shows_prompt_size_metadata():
     assert "width: auto;" in rule_body
     assert "height: auto;" in rule_body
     assert "object-fit: contain;" in rule_body
-    assert "id=\"detailPrompt\"" in module.ADMIN_HTML
-    assert "id=\"detailGenerationSize\"" in module.ADMIN_HTML
+    assert 'id="detailPrompt"' in module.ADMIN_HTML
+    assert 'id="detailGenerationSize"' in module.ADMIN_HTML
     assert "formatGenerationSize(image)" in module.ADMIN_HTML
     assert "formatPrompt(image.prompt)" in module.ADMIN_HTML
 
@@ -888,23 +946,37 @@ def test_admin_html_preview_sidebar_disables_horizontal_scrolling():
     assert "min-width: 0;" in module.ADMIN_HTML
     assert "overflow-wrap: anywhere;" in module.ADMIN_HTML
     assert ".preview .settings-actions" in module.ADMIN_HTML
-    assert ".preview { position: static; height: auto; overflow-x: hidden; overflow-y: visible; }" in module.ADMIN_HTML
+    assert (
+        ".preview { position: static; height: auto; overflow-x: hidden; overflow-y: visible; }"
+        in module.ADMIN_HTML
+    )
 
 
 def test_admin_html_caches_thumbnails_before_original_images():
     module = _load_module()
 
     assert "function thumbnailCacheKey(image)" in module.ADMIN_HTML
-    assert 'return `thumb:v2:' in module.ADMIN_HTML
+    assert "return `thumb:v2:" in module.ADMIN_HTML
     assert "function originalCacheKey(image)" in module.ADMIN_HTML
-    assert "kind: \"thumbnail\"" in module.ADMIN_HTML
-    assert "kind: \"original\"" in module.ADMIN_HTML
+    assert 'kind: "thumbnail"' in module.ADMIN_HTML
+    assert 'kind: "original"' in module.ADMIN_HTML
     assert "thumb.src = await getCachedThumbnailUrl(image);" in module.ADMIN_HTML
-    assert "const originalUrl = await getCachedOriginalUrl(state.selected);" in module.ADMIN_HTML
-    assert "previewBox\").innerHTML = `<img src=\"${escapeAttribute(imageUrl(image))}\"" in module.ADMIN_HTML
-    assert "const cached = await readCachedImage(originalCacheKey(state.selected));" not in module.ADMIN_HTML
+    assert (
+        "const originalUrl = await getCachedOriginalUrl(state.selected);"
+        in module.ADMIN_HTML
+    )
+    assert (
+        'previewBox").innerHTML = `<img src="${escapeAttribute(imageUrl(image))}"'
+        in module.ADMIN_HTML
+    )
+    assert (
+        "const cached = await readCachedImage(originalCacheKey(state.selected));"
+        not in module.ADMIN_HTML
+    )
     assert "key: originalCacheKey(state.selected)" not in module.ADMIN_HTML
-    assert "const cachedUrl = await getCachedOriginalUrl(image);" not in module.ADMIN_HTML
+    assert (
+        "const cachedUrl = await getCachedOriginalUrl(image);" not in module.ADMIN_HTML
+    )
     assert "thumb.src = await getCachedImageUrl(image);" not in module.ADMIN_HTML
 
 
@@ -913,7 +985,10 @@ def test_admin_html_generates_high_resolution_gallery_thumbnails():
 
     assert "const maxSide = 960;" in module.ADMIN_HTML
     assert 'context.imageSmoothingQuality = "high";' in module.ADMIN_HTML
-    assert 'canvas.toBlob((blob) => resolve(blob || sourceBlob), "image/webp", 0.92);' in module.ADMIN_HTML
+    assert (
+        'canvas.toBlob((blob) => resolve(blob || sourceBlob), "image/webp", 0.92);'
+        in module.ADMIN_HTML
+    )
 
 
 def test_admin_html_does_not_auto_select_first_history_image():
@@ -921,7 +996,7 @@ def test_admin_html_does_not_auto_select_first_history_image():
 
     assert "function clearPreview" in module.ADMIN_HTML
     assert "selectImage(state.images[0].name)" not in module.ADMIN_HTML
-    assert 'if (preferredName) {' in module.ADMIN_HTML
+    assert "if (preferredName) {" in module.ADMIN_HTML
 
 
 @pytest.mark.asyncio
