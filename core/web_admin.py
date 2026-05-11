@@ -637,10 +637,10 @@ ADMIN_HTML = r"""<!doctype html>
       align-items: start;
       min-height: 100vh;
     }
-    body.settings-active .app-shell {
+    body.preview-hidden .app-shell {
       grid-template-columns: 240px minmax(420px, 1fr);
     }
-    body.settings-active .preview {
+    body.preview-hidden .preview {
       display: none;
     }
     .sidebar,
@@ -826,21 +826,20 @@ ADMIN_HTML = r"""<!doctype html>
       transform: none;
     }
     .gallery {
-      column-width: 220px;
-      column-gap: 14px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      align-items: start;
+      gap: 14px;
       min-height: 300px;
     }
     .gallery-empty {
-      column-span: all;
+      grid-column: 1 / -1;
       width: 100%;
       box-sizing: border-box;
     }
     .image-card {
       position: relative;
-      display: inline-block;
       width: 100%;
-      margin: 0 0 14px;
-      break-inside: avoid;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -1380,8 +1379,9 @@ ADMIN_HTML = r"""<!doctype html>
         </div>
         <div class="settings-grid">
           <div id="cacheInfo" class="cache-info">
-            <div class="detail-row"><span>缓存图片</span><strong id="cacheImageCount">0 张</strong></div>
-            <div class="detail-row"><span>占用空间</span><strong id="cacheBytes">0 B</strong></div>
+            <div class="detail-row"><span>缩略图缓存</span><strong id="thumbnailCacheInfo">0 张 / 0 B</strong></div>
+            <div class="detail-row"><span>原图缓存</span><strong id="originalCacheInfo">0 张 / 0 B</strong></div>
+            <div class="detail-row"><span>总占用空间</span><strong id="cacheBytes">0 B</strong></div>
           </div>
           <div class="settings-actions">
             <button id="clearLocalCacheBtn" class="btn" type="button">清空本地图片缓存</button>
@@ -1487,7 +1487,7 @@ ADMIN_HTML = r"""<!doctype html>
     }
 
     function updatePreviewVisibility(panelId) {
-      document.body.classList.toggle("settings-active", panelId === "settingsPanel");
+      document.body.classList.toggle("preview-hidden", panelId !== "galleryPanel");
     }
 
     function escapeAttribute(value) {
@@ -1500,7 +1500,7 @@ ADMIN_HTML = r"""<!doctype html>
 
     // 缩略图和原图必须拆成两个缓存键：图库滚动只保存小图，用户点开预览后才写入原图。
     function thumbnailCacheKey(image) {
-      return `thumb:${image.name}:${image.modified_at}:${image.size_bytes}`;
+      return `thumb:v2:${image.name}:${image.modified_at}:${image.size_bytes}`;
     }
 
     function originalCacheKey(image) {
@@ -1556,9 +1556,9 @@ ADMIN_HTML = r"""<!doctype html>
     }
 
     async function createThumbnailBlob(sourceBlob) {
-      // 缩略图只需要满足图库浏览，限制最长边能显著降低 IndexedDB 占用。
+      // 历史图库会直接承担浏览和挑选图片的任务，因此缩略图需要保留足够清晰度。
       const bitmap = await createImageBitmap(sourceBlob);
-      const maxSide = 420;
+      const maxSide = 960;
       const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
       const width = Math.max(1, Math.round(bitmap.width * scale));
       const height = Math.max(1, Math.round(bitmap.height * scale));
@@ -1566,10 +1566,11 @@ ADMIN_HTML = r"""<!doctype html>
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext("2d");
+      context.imageSmoothingQuality = "high";
       context.drawImage(bitmap, 0, 0, width, height);
       bitmap.close();
       return new Promise((resolve) => {
-        canvas.toBlob((blob) => resolve(blob || sourceBlob), "image/webp", 0.82);
+        canvas.toBlob((blob) => resolve(blob || sourceBlob), "image/webp", 0.92);
       });
     }
 
@@ -1662,10 +1663,15 @@ ADMIN_HTML = r"""<!doctype html>
 
     async function refreshCacheInfo() {
       const records = await listCachedImages();
+      const thumbnailRecords = records.filter((item) => item.kind === "thumbnail");
+      const originalRecords = records.filter((item) => item.kind === "original");
+      const thumbnailBytes = thumbnailRecords.reduce((sum, item) => sum + (item.size || 0), 0);
+      const originalBytes = originalRecords.reduce((sum, item) => sum + (item.size || 0), 0);
       const totalBytes = records.reduce((sum, item) => sum + (item.size || 0), 0);
-      $("cacheImageCount").textContent = `${records.length} 张`;
+      $("thumbnailCacheInfo").textContent = `${thumbnailRecords.length} 张 / ${formatBytes(thumbnailBytes)}`;
+      $("originalCacheInfo").textContent = `${originalRecords.length} 张 / ${formatBytes(originalBytes)}`;
       $("cacheBytes").textContent = formatBytes(totalBytes);
-      $("cacheSummary").textContent = `${records.length} 张本地缓存，占用 ${formatBytes(totalBytes)}`;
+      $("cacheSummary").textContent = `${thumbnailRecords.length} 张缩略图、${originalRecords.length} 张原图，占用 ${formatBytes(totalBytes)}`;
     }
 
     function resolveSizeValue(presetId, customId) {

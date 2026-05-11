@@ -478,7 +478,7 @@ def test_admin_html_preview_actions_match_requested_gallery_flow():
     assert "用于编辑" not in module.ADMIN_HTML
 
 
-def test_admin_html_gallery_uses_fluid_grid_without_cropping_images():
+def test_admin_html_gallery_uses_left_to_right_grid_without_cropping_images():
     module = _load_module()
     gallery_rule = re.search(r"\.gallery\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
     thumb_rule = re.search(r"\.thumb\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
@@ -487,11 +487,13 @@ def test_admin_html_gallery_uses_fluid_grid_without_cropping_images():
     assert thumb_rule is not None
     gallery_body = gallery_rule.group("body")
     thumb_body = thumb_rule.group("body")
-    assert "column-width:" in gallery_body
-    assert "column-gap:" in gallery_body
-    assert "display: grid;" not in gallery_body
+    assert "display: grid;" in gallery_body
+    assert "grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));" in gallery_body
+    assert "align-items: start;" in gallery_body
+    assert "column-width:" not in gallery_body
+    assert "column-gap:" not in gallery_body
     assert "gallery-empty" in module.ADMIN_HTML
-    assert "grid-column:1/-1" not in module.ADMIN_HTML
+    assert "grid-column: 1 / -1;" in module.ADMIN_HTML
     assert "height: auto;" in thumb_body
     assert "object-fit: contain;" in thumb_body
     assert "object-fit: cover;" not in thumb_body
@@ -565,6 +567,10 @@ def test_admin_html_uses_browser_local_image_cache_and_settings():
     assert "不支持选择可写文件夹" not in module.ADMIN_HTML
     assert "id=\"cacheInfo\"" in module.ADMIN_HTML
     assert "id=\"clearLocalCacheBtn\"" in module.ADMIN_HTML
+    assert "id=\"thumbnailCacheInfo\"" in module.ADMIN_HTML
+    assert "id=\"originalCacheInfo\"" in module.ADMIN_HTML
+    assert "const thumbnailRecords = records.filter((item) => item.kind === \"thumbnail\");" in module.ADMIN_HTML
+    assert "const originalRecords = records.filter((item) => item.kind === \"original\");" in module.ADMIN_HTML
     assert "保存缓存设置" not in module.ADMIN_HTML
     assert "默认端口" not in module.ADMIN_HTML
     assert "默认监听" not in module.ADMIN_HTML
@@ -581,13 +587,14 @@ def test_admin_html_keeps_sidebars_fixed_on_desktop_scroll():
     assert ".app-shell { display: block; }" in module.ADMIN_HTML
 
 
-def test_admin_html_hides_preview_sidebar_on_settings_page():
+def test_admin_html_hides_preview_sidebar_outside_gallery_page():
     module = _load_module()
 
     assert "function updatePreviewVisibility" in module.ADMIN_HTML
-    assert 'document.body.classList.toggle("settings-active", panelId === "settingsPanel");' in module.ADMIN_HTML
-    assert "body.settings-active .preview" in module.ADMIN_HTML
-    assert "body.settings-active .app-shell" in module.ADMIN_HTML
+    assert 'document.body.classList.toggle("preview-hidden", panelId !== "galleryPanel");' in module.ADMIN_HTML
+    assert "body.preview-hidden .preview" in module.ADMIN_HTML
+    assert "body.preview-hidden .app-shell" in module.ADMIN_HTML
+    assert "settings-active" not in module.ADMIN_HTML
 
 
 def test_admin_html_centers_preview_image_and_shows_prompt_size_metadata():
@@ -623,6 +630,7 @@ def test_admin_html_caches_thumbnails_before_original_images():
     module = _load_module()
 
     assert "function thumbnailCacheKey(image)" in module.ADMIN_HTML
+    assert 'return `thumb:v2:' in module.ADMIN_HTML
     assert "function originalCacheKey(image)" in module.ADMIN_HTML
     assert "kind: \"thumbnail\"" in module.ADMIN_HTML
     assert "kind: \"original\"" in module.ADMIN_HTML
@@ -633,6 +641,14 @@ def test_admin_html_caches_thumbnails_before_original_images():
     assert "key: originalCacheKey(state.selected)" not in module.ADMIN_HTML
     assert "const cachedUrl = await getCachedOriginalUrl(image);" not in module.ADMIN_HTML
     assert "thumb.src = await getCachedImageUrl(image);" not in module.ADMIN_HTML
+
+
+def test_admin_html_generates_high_resolution_gallery_thumbnails():
+    module = _load_module()
+
+    assert "const maxSide = 960;" in module.ADMIN_HTML
+    assert 'context.imageSmoothingQuality = "high";' in module.ADMIN_HTML
+    assert 'canvas.toBlob((blob) => resolve(blob || sourceBlob), "image/webp", 0.92);' in module.ADMIN_HTML
 
 
 def test_admin_html_does_not_auto_select_first_history_image():
