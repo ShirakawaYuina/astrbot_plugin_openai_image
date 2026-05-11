@@ -474,6 +474,26 @@ def test_admin_html_preview_actions_match_requested_gallery_flow():
     assert "用于编辑" not in module.ADMIN_HTML
 
 
+def test_admin_html_gallery_uses_fluid_grid_without_cropping_images():
+    module = _load_module()
+    gallery_rule = re.search(r"\.gallery\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
+    thumb_rule = re.search(r"\.thumb\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
+
+    assert gallery_rule is not None
+    assert thumb_rule is not None
+    gallery_body = gallery_rule.group("body")
+    thumb_body = thumb_rule.group("body")
+    assert "column-width:" in gallery_body
+    assert "column-gap:" in gallery_body
+    assert "display: grid;" not in gallery_body
+    assert "gallery-empty" in module.ADMIN_HTML
+    assert "grid-column:1/-1" not in module.ADMIN_HTML
+    assert "height: auto;" in thumb_body
+    assert "object-fit: contain;" in thumb_body
+    assert "object-fit: cover;" not in thumb_body
+    assert "aspect-ratio:" not in thumb_body
+
+
 def test_admin_html_supports_paste_reference_image_preview():
     module = _load_module()
 

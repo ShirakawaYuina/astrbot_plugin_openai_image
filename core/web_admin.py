@@ -826,13 +826,21 @@ ADMIN_HTML = r"""<!doctype html>
       transform: none;
     }
     .gallery {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
-      gap: 14px;
+      column-width: 220px;
+      column-gap: 14px;
       min-height: 300px;
+    }
+    .gallery-empty {
+      column-span: all;
+      width: 100%;
+      box-sizing: border-box;
     }
     .image-card {
       position: relative;
+      display: inline-block;
+      width: 100%;
+      margin: 0 0 14px;
+      break-inside: avoid;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -864,8 +872,8 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .thumb {
       width: 100%;
-      aspect-ratio: 4 / 3;
-      object-fit: cover;
+      height: auto;
+      object-fit: contain;
       display: block;
       background: #edf3fb;
     }
@@ -1695,7 +1703,7 @@ ADMIN_HTML = r"""<!doctype html>
       $("imageCount").textContent = state.images.length;
       refreshCacheInfo().catch(() => {});
       if (!images.length) {
-        gallery.innerHTML = '<div class="empty-gallery" style="grid-column:1/-1;">暂无图片，可切换到生图页面创建新图片。</div>';
+        gallery.innerHTML = '<div class="empty-gallery gallery-empty">暂无图片，可切换到生图页面创建新图片。</div>';
         return;
       }
       gallery.innerHTML = images.map((image) => {
