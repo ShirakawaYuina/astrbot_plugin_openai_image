@@ -1191,15 +1191,15 @@ ADMIN_HTML = r"""<!doctype html>
         </div>
         <div class="settings-grid">
           <div>
-            <label for="localCacheDirectory">缓存目录地址</label>
+            <label for="localCacheDirectory">缓存文件夹</label>
             <div class="settings-actions" style="margin-bottom:10px;">
               <input id="localCacheDirectory" class="control" type="text" readonly placeholder="未选择文件夹" style="width:100%;">
               <button id="selectCacheDirectoryBtn" class="btn primary" type="button">选择文件夹</button>
             </div>
-            <p class="muted" style="margin:0;">点击按钮后选择一个文件夹作为缓存目录；浏览器会优先把图片缓存在本地存储中。</p>
+            <p class="muted" style="margin:0;">点击按钮后选择一个文件夹作为缓存位置；受浏览器安全限制，网页只能显示文件夹名称，无法读取完整本机路径。</p>
           </div>
           <div id="cacheInfo" class="cache-info">
-            <div class="detail-row"><span>缓存目录</span><strong id="cacheDirectoryText">未设置</strong></div>
+            <div class="detail-row"><span>缓存文件夹</span><strong id="cacheDirectoryText">未设置</strong></div>
             <div class="detail-row"><span>缓存图片</span><strong id="cacheImageCount">0 张</strong></div>
             <div class="detail-row"><span>占用空间</span><strong id="cacheBytes">0 B</strong></div>
           </div>

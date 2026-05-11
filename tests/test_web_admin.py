@@ -329,6 +329,10 @@ def test_admin_html_uses_browser_local_image_cache_and_settings():
     assert "function getCachedImageUrl" in module.ADMIN_HTML
     assert "function refreshCacheInfo" in module.ADMIN_HTML
     assert "id=\"localCacheDirectory\"" in module.ADMIN_HTML
+    assert "缓存文件夹" in module.ADMIN_HTML
+    assert "浏览器安全限制" in module.ADMIN_HTML
+    assert "完整本机路径" in module.ADMIN_HTML
+    assert "缓存目录地址" not in module.ADMIN_HTML
     assert "readonly" in module.ADMIN_HTML
     assert "id=\"selectCacheDirectoryBtn\"" in module.ADMIN_HTML
     assert "showDirectoryPicker" in module.ADMIN_HTML
