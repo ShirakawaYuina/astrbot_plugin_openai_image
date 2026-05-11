@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -448,9 +449,17 @@ def test_admin_html_hides_preview_sidebar_on_settings_page():
 
 def test_admin_html_centers_preview_image_and_shows_prompt_size_metadata():
     module = _load_module()
+    preview_image_rule = re.search(r"\.preview-box img\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
 
     assert "display: grid;" in module.ADMIN_HTML
     assert "place-items: center;" in module.ADMIN_HTML
+    assert preview_image_rule is not None
+    rule_body = preview_image_rule.group("body")
+    assert "width: 100%;" in rule_body
+    assert "height: 100%;" in rule_body
+    assert "object-fit: contain;" in rule_body
+    assert "max-width: 100%;" not in rule_body
+    assert "max-height: 100%;" not in rule_body
     assert "id=\"detailPrompt\"" in module.ADMIN_HTML
     assert "id=\"detailGenerationSize\"" in module.ADMIN_HTML
     assert "formatGenerationSize(image)" in module.ADMIN_HTML
