@@ -1441,6 +1441,8 @@ ADMIN_HTML = r"""<!doctype html>
       .action-panel,
       .prompt-action-row,
       .result-grid { grid-template-columns: 1fr; }
+      .result-card.span-2 { grid-column: auto; }
+      .result-card.is-tall { grid-row: auto; }
       .field-row { grid-template-columns: repeat(2, 1fr); }
       .topbar, .section-head { align-items: stretch; flex-direction: column; }
       .status-pill { width: fit-content; }
@@ -1659,6 +1661,36 @@ ADMIN_HTML = r"""<!doctype html>
   <div id="toast" class="toast hidden"></div>
 
   <script>
+    const RESULT_PANEL_CONFIG = {
+      generate: {
+        boxId: "generateResultBox",
+        statusId: "generateResultStatus",
+        gridId: "generateResultGrid",
+        emptyId: "generateResultEmpty",
+        emptyMessage: "生成的图片会显示在这里，并同步进入右侧预览和历史图库。",
+        states: {
+          empty: "暂无结果",
+          loading: "生成中",
+          streaming: "正在追加结果",
+          success: "生成完成",
+          error: "生成失败",
+        },
+      },
+      edit: {
+        boxId: "editResultBox",
+        statusId: "editResultStatus",
+        gridId: "editResultGrid",
+        emptyId: "editResultEmpty",
+        emptyMessage: "编辑后的图片会显示在这里，并同步进入右侧预览和历史图库。",
+        states: {
+          empty: "暂无结果",
+          loading: "编辑中",
+          streaming: "正在追加结果",
+          success: "编辑完成",
+          error: "编辑失败",
+        },
+      },
+    };
     const state = {
       token: localStorage.getItem("openaiImageAdminToken") || "",
       images: [],
@@ -1940,41 +1972,12 @@ ADMIN_HTML = r"""<!doctype html>
       return String((image && image.generation_size) || "").trim() || "未记录";
     }
 
-    function resultStatusNode(targetId) {
-      return targetId === "generateResultBox" ? $("generateResultStatus") : $("editResultStatus");
-    }
-
-    function resultGridNode(targetId) {
-      return targetId === "generateResultBox" ? $("generateResultGrid") : $("editResultGrid");
-    }
-
-    function resultEmptyNode(targetId) {
-      return targetId === "generateResultBox" ? $("generateResultEmpty") : $("editResultEmpty");
-    }
-
-    function resultEmptyMessage(targetId) {
-      return targetId === "generateResultBox"
-        ? "生成的图片会显示在这里，并同步进入右侧预览和历史图库。"
-        : "编辑后的图片会显示在这里，并同步进入右侧预览和历史图库。";
-    }
-
-    function resultStateMessages(targetId) {
-      if (targetId === "generateResultBox") {
-        return {
-          empty: "暂无结果",
-          loading: "生成中",
-          streaming: "正在追加结果",
-          success: "生成完成",
-          error: "生成失败",
-        };
-      }
-      return {
-        empty: "暂无结果",
-        loading: "编辑中",
-        streaming: "正在追加结果",
-        success: "编辑完成",
-        error: "编辑失败",
-      };
+    function resultPanelConfig(targetId) {
+      // 结果区壳层需要同时驱动状态文案、空态提示和容器节点，统一从配置表读取可避免多处分支漂移。
+      const mode = Object.keys(RESULT_PANEL_CONFIG).find(
+        (item) => RESULT_PANEL_CONFIG[item].boxId === targetId
+      );
+      return RESULT_PANEL_CONFIG[mode || "edit"];
     }
 
     function resultCardSpanClass(image) {
@@ -1995,11 +1998,11 @@ ADMIN_HTML = r"""<!doctype html>
 
     function setResultState(targetId, status, message = "") {
       // 这里只维护结果容器的状态样式和轻量状态文案，后续流式追加与分页加载会复用这层壳。
+      const panelConfig = resultPanelConfig(targetId);
       const box = $(targetId);
       box.classList.remove("state-empty", "state-loading", "state-success", "state-error", "state-streaming");
       box.classList.add(`state-${status}`);
-      const defaultMessages = resultStateMessages(targetId);
-      resultStatusNode(targetId).textContent = message || defaultMessages[status] || defaultMessages.empty;
+      $(panelConfig.statusId).textContent = message || panelConfig.states[status] || panelConfig.states.empty;
     }
 
     function filteredImages() {
@@ -2107,16 +2110,17 @@ ADMIN_HTML = r"""<!doctype html>
 
     function renderResultImages(targetId, imageNames) {
       // 生成/编辑完成后，把本次结果留在操作区上方，减少用户在右侧预览和表单之间来回找图。
+      const panelConfig = resultPanelConfig(targetId);
       const names = Array.isArray(imageNames) ? imageNames.filter(Boolean) : [];
       const images = names
         .map((name) => state.images.find((item) => item.name === name))
         .filter(Boolean);
-      const grid = resultGridNode(targetId);
-      const emptyNode = resultEmptyNode(targetId);
+      const grid = $(panelConfig.gridId);
+      const emptyNode = $(panelConfig.emptyId);
 
       grid.innerHTML = "";
       if (!images.length) {
-        emptyNode.textContent = resultEmptyMessage(targetId);
+        emptyNode.textContent = panelConfig.emptyMessage;
         setResultState(targetId, "empty");
         return;
       }

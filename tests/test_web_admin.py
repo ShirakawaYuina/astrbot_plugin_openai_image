@@ -760,6 +760,43 @@ def test_admin_html_defines_result_state_shell_for_generate_and_edit_panels():
     assert "function createResultCard(" in module.ADMIN_HTML
 
 
+def test_admin_html_resets_result_card_spans_in_mobile_single_column_layout():
+    module = _load_module()
+    mobile_section = module.ADMIN_HTML.split("@media (max-width: 860px)", 1)[1].split(
+        "</style>", 1
+    )[0]
+
+    assert ".result-card.span-2" in mobile_section
+    assert "grid-column: auto;" in mobile_section
+    assert ".result-card.is-tall" in mobile_section
+    assert "grid-row: auto;" in mobile_section
+
+
+def test_admin_html_uses_result_panel_config_and_span_threshold_rules():
+    module = _load_module()
+
+    assert "const RESULT_PANEL_CONFIG = {" in module.ADMIN_HTML
+    assert "function resultPanelConfig(" in module.ADMIN_HTML
+    assert "width >= height * 1.25" in module.ADMIN_HTML
+    assert "height >= width * 1.25" in module.ADMIN_HTML
+
+
+def test_admin_html_shell_helpers_keep_result_state_transitions_explicit():
+    module = _load_module()
+    set_result_state_section = module.ADMIN_HTML.split("function setResultState", 1)[1].split(
+        "function filteredImages", 1
+    )[0]
+    render_result_images_section = module.ADMIN_HTML.split(
+        "function renderResultImages", 1
+    )[1].split("async function loadImages", 1)[0]
+
+    assert 'box.classList.remove("state-empty", "state-loading", "state-success", "state-error", "state-streaming");' in set_result_state_section
+    assert 'box.classList.add(`state-${status}`);' in set_result_state_section
+    assert 'grid.innerHTML = "";' in render_result_images_section
+    assert 'setResultState(targetId, "empty");' in render_result_images_section
+    assert 'setResultState(targetId, "success");' in render_result_images_section
+
+
 def test_admin_html_supports_multiple_reference_thumbnails_on_edit_page():
     module = _load_module()
 
