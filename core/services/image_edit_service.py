@@ -77,10 +77,19 @@ class ImageEditService:
                 response_summary,
             )
             raise ValueError(f"{exc}; {response_summary}") from exc
-        return self.cache_store.save_image(
+        image_path = self.cache_store.save_image(
             parsed_response.image_bytes,
             parsed_response.extension,
         )
+        self.cache_store.save_image_metadata(
+            image_path,
+            {
+                "prompt": prompt,
+                "size": size or "",
+                "mode": "edit",
+            },
+        )
+        return image_path
 
     @staticmethod
     def _build_images_edit_files(

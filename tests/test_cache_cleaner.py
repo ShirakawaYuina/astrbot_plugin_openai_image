@@ -24,8 +24,10 @@ def test_cleanup_removes_oldest_image_files_only(tmp_path: Path):
     middle = tmp_path / "middle.jpg"
     newest = tmp_path / "new.webp"
     keep_text = tmp_path / "note.txt"
+    oldest_metadata = tmp_path / "old.png.json"
 
     oldest.write_bytes(b"1")
+    oldest_metadata.write_text('{"prompt":"旧图"}', encoding="utf-8")
     time.sleep(0.02)
     middle.write_bytes(b"2")
     time.sleep(0.02)
@@ -36,6 +38,7 @@ def test_cleanup_removes_oldest_image_files_only(tmp_path: Path):
 
     assert removed == [oldest]
     assert not oldest.exists()
+    assert not oldest_metadata.exists()
     assert middle.exists()
     assert newest.exists()
     assert keep_text.exists()

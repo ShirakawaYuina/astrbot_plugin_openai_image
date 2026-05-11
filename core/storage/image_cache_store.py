@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from .cache_cleaner import cleanup_cache
 
@@ -28,3 +30,20 @@ class ImageCacheStore:
         file_path.write_bytes(image_bytes)
         cleanup_cache(self.cache_dir, self.max_cache_images)
         return file_path
+
+    def save_image_metadata(self, image_path: Path, metadata: dict[str, Any]) -> None:
+        """为图片写入同名元数据文件，记录提示词、尺寸等后台展示信息。"""
+
+        resolved_image_path = Path(image_path)
+        metadata_path = resolved_image_path.with_name(
+            f"{resolved_image_path.name}.json"
+        )
+        safe_metadata = {
+            "prompt": str(metadata.get("prompt", "") or ""),
+            "size": str(metadata.get("size", "") or ""),
+            "mode": str(metadata.get("mode", "") or ""),
+        }
+        metadata_path.write_text(
+            json.dumps(safe_metadata, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )

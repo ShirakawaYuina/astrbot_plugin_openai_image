@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import mimetypes
 import secrets
 from collections.abc import Awaitable, Callable
@@ -91,6 +92,17 @@ class ImageLibrary:
 
         return self._build_image_metadata(self.resolve_image_path(file_name))
 
+    def delete_image_by_name(self, file_name: str) -> str:
+        """删除缓存图片及同名元数据文件，供网页后台管理历史图片。"""
+
+        image_path = self.resolve_image_path(file_name)
+        removed_name = image_path.name
+        image_path.unlink()
+        metadata_path = self._metadata_path_for(image_path)
+        if metadata_path.is_file():
+            metadata_path.unlink()
+        return removed_name
+
     def resolve_image_path(self, file_name: str) -> Path:
         """解析图片文件名，拒绝目录穿越和非图片后缀。"""
 
@@ -112,18 +124,42 @@ class ImageLibrary:
 
         return path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
 
-    @staticmethod
-    def _build_image_metadata(image_path: Path) -> dict[str, Any]:
+    @classmethod
+    def _build_image_metadata(cls, image_path: Path) -> dict[str, Any]:
         """将缓存图片路径转换为前端需要的稳定字段。"""
 
         stat_result = image_path.stat()
+        metadata = cls._read_image_sidecar_metadata(image_path)
         return {
             "name": image_path.name,
             "url": f"/api/images/{image_path.name}",
             "mime_type": _guess_mime_type(image_path),
             "size_bytes": stat_result.st_size,
             "modified_at": int(stat_result.st_mtime),
+            "prompt": str(metadata.get("prompt", "") or ""),
+            "generation_size": str(metadata.get("size", "") or ""),
+            "mode": str(metadata.get("mode", "") or ""),
         }
+
+    @staticmethod
+    def _metadata_path_for(image_path: Path) -> Path:
+        """返回图片对应的 sidecar 元数据路径。"""
+
+        return image_path.with_name(f"{image_path.name}.json")
+
+    @classmethod
+    def _read_image_sidecar_metadata(cls, image_path: Path) -> dict[str, Any]:
+        """读取图片同名元数据；旧图片没有记录时返回空字段。"""
+
+        metadata_path = cls._metadata_path_for(image_path)
+        if not metadata_path.is_file():
+            return {}
+        try:
+            data = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            # 元数据缺失或损坏不应影响图库浏览，前端会展示“未记录”。
+            return {}
+        return data if isinstance(data, dict) else {}
 
 
 def create_generation_job(
@@ -231,6 +267,7 @@ class WebAdminServer:
         app.router.add_post("/api/login", self._handle_login)
         app.router.add_get("/api/images", self._handle_list_images)
         app.router.add_get("/api/images/{file_name}", self._handle_get_image)
+        app.router.add_delete("/api/images/{file_name}", self._handle_delete_image)
         app.router.add_post("/api/generate", self._handle_generate)
         app.router.add_post("/api/edit", self._handle_edit)
         return app
@@ -283,6 +320,23 @@ class WebAdminServer:
             return web.json_response({"error": "图片不存在"}, status=404)
 
         return web.FileResponse(image_path, headers={"Cache-Control": "no-store"})
+
+    async def _handle_delete_image(self, request: web.Request) -> web.Response:
+        """删除服务端缓存图片及其元数据。"""
+
+        auth_response = self._require_auth(request)
+        if auth_response is not None:
+            return auth_response
+
+        try:
+            removed_name = self.library.delete_image_by_name(
+                request.match_info.get("file_name", "")
+            )
+        except FileNotFoundError:
+            return web.json_response({"error": "图片不存在"}, status=404)
+
+        logger.info("[OpenAIImage][web] 删除历史图片 file=%s", removed_name)
+        return web.json_response({"deleted": removed_name})
 
     async def _handle_generate(self, request: web.Request) -> web.Response:
         """处理网页文生图请求。"""
@@ -575,6 +629,12 @@ ADMIN_HTML = r"""<!doctype html>
       align-items: start;
       min-height: 100vh;
     }
+    body.settings-active .app-shell {
+      grid-template-columns: 240px minmax(420px, 1fr);
+    }
+    body.settings-active .preview {
+      display: none;
+    }
     .sidebar,
     .preview {
       position: sticky;
@@ -748,6 +808,10 @@ ADMIN_HTML = r"""<!doctype html>
       color: #fff;
       box-shadow: 0 12px 24px rgba(61, 115, 246, 0.25);
     }
+    .btn.danger {
+      background: #fdecec;
+      color: var(--danger);
+    }
     .btn:disabled {
       opacity: 0.56;
       cursor: not-allowed;
@@ -760,6 +824,7 @@ ADMIN_HTML = r"""<!doctype html>
       min-height: 300px;
     }
     .image-card {
+      position: relative;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -772,6 +837,23 @@ ADMIN_HTML = r"""<!doctype html>
       outline: 2px solid rgba(61, 115, 246, 0.18);
     }
     .image-card:hover { transform: translateY(-2px); }
+    .image-card-actions {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      gap: 6px;
+    }
+    .image-card-action {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--danger);
+      box-shadow: 0 8px 20px rgba(24, 32, 51, 0.12);
+    }
     .thumb {
       width: 100%;
       aspect-ratio: 4 / 3;
@@ -904,6 +986,8 @@ ADMIN_HTML = r"""<!doctype html>
       margin-bottom: 18px;
     }
     .preview-box {
+      display: grid;
+      place-items: center;
       overflow: hidden;
       border-radius: 8px;
       border: 1px solid var(--line);
@@ -913,8 +997,8 @@ ADMIN_HTML = r"""<!doctype html>
       cursor: zoom-in;
     }
     .preview-box img {
-      width: 100%;
-      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
       object-fit: contain;
       display: block;
     }
@@ -944,6 +1028,20 @@ ADMIN_HTML = r"""<!doctype html>
       border-bottom: 1px solid var(--line);
       color: var(--muted);
       font-size: 13px;
+    }
+    .detail-row strong {
+      color: #263247;
+      text-align: right;
+      word-break: break-word;
+    }
+    .detail-row.detail-row-block {
+      display: block;
+    }
+    .detail-row.detail-row-block strong {
+      display: block;
+      margin-top: 8px;
+      text-align: left;
+      line-height: 1.5;
     }
     .actions {
       display: grid;
@@ -1207,10 +1305,15 @@ ADMIN_HTML = r"""<!doctype html>
     <aside class="preview">
       <div class="preview-head">
         <h2>预览</h2>
-        <button id="copyImageBtn" class="btn" type="button" disabled>复制图片</button>
+        <div class="settings-actions">
+          <button id="copyImageBtn" class="btn" type="button" disabled>复制图片</button>
+          <button id="deleteImageBtn" class="btn danger" type="button" disabled>删除</button>
+        </div>
       </div>
       <div id="previewBox" class="preview-box empty-preview" title="双击查看原图">请选择一张图片</div>
       <h3 id="detailTitle" class="detail-title">暂无选中图片</h3>
+      <div class="detail-row detail-row-block"><span>提示词</span><strong id="detailPrompt">-</strong></div>
+      <div class="detail-row"><span>生成尺寸</span><strong id="detailGenerationSize">-</strong></div>
       <div class="detail-row"><span>格式</span><strong id="detailType">-</strong></div>
       <div class="detail-row"><span>大小</span><strong id="detailSize">-</strong></div>
       <div class="detail-row"><span>更新时间</span><strong id="detailTime">-</strong></div>
@@ -1290,7 +1393,12 @@ ADMIN_HTML = r"""<!doctype html>
       document.querySelectorAll(".nav-item").forEach((item) => {
         item.classList.toggle("active", item.dataset.panel === panelId);
       });
+      updatePreviewVisibility(panelId);
       if (panelId === "editPanel") $("pasteImageZone").focus();
+    }
+
+    function updatePreviewVisibility(panelId) {
+      document.body.classList.toggle("settings-active", panelId === "settingsPanel");
     }
 
     function escapeAttribute(value) {
@@ -1308,6 +1416,10 @@ ADMIN_HTML = r"""<!doctype html>
 
     function originalCacheKey(image) {
       return `original:${image.name}:${image.modified_at}:${image.size_bytes}`;
+    }
+
+    function imageCacheKeys(image) {
+      return [thumbnailCacheKey(image), originalCacheKey(image)];
     }
 
     function openImageCache() {
@@ -1439,6 +1551,26 @@ ADMIN_HTML = r"""<!doctype html>
       await refreshCacheInfo();
     }
 
+    async function clearImageCacheRecords(image) {
+      const db = await openImageCache();
+      if (!db || !image) return;
+      const keys = imageCacheKeys(image);
+      await new Promise((resolve) => {
+        const store = db.transaction(IMAGE_CACHE_STORE, "readwrite").objectStore(IMAGE_CACHE_STORE);
+        let pending = keys.length;
+        const finish = () => {
+          pending -= 1;
+          if (pending <= 0) resolve();
+        };
+        keys.forEach((key) => {
+          const request = store.delete(key);
+          request.onsuccess = finish;
+          request.onerror = finish;
+        });
+      });
+      await refreshCacheInfo();
+    }
+
     async function refreshCacheInfo() {
       const records = await listCachedImages();
       const totalBytes = records.reduce((sum, item) => sum + (item.size || 0), 0);
@@ -1455,6 +1587,14 @@ ADMIN_HTML = r"""<!doctype html>
 
     function syncCustomSize(presetId, customId) {
       $(customId).classList.toggle("hidden", $(presetId).value !== "custom");
+    }
+
+    function formatPrompt(value) {
+      return String(value || "").trim() || "未记录";
+    }
+
+    function formatGenerationSize(image) {
+      return String((image && image.generation_size) || "").trim() || "未记录";
     }
 
     function filteredImages() {
@@ -1484,6 +1624,11 @@ ADMIN_HTML = r"""<!doctype html>
         const safeAttrName = escapeAttribute(image.name);
         return `
         <button class="image-card ${state.selected && state.selected.name === image.name ? "selected" : ""}" type="button" data-name="${safeAttrName}">
+          <span class="image-card-actions">
+            <span class="image-card-action delete-image-action" data-name="${safeAttrName}" title="删除图片" aria-label="删除图片">
+              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
+            </span>
+          </span>
           <img class="thumb" data-cache-key="${escapeAttribute(thumbnailCacheKey(image))}" alt="${safeAttrName}" loading="lazy">
           <div class="card-meta">
             <div class="card-name" title="${safeAttrName}">${safeName}</div>
@@ -1494,6 +1639,12 @@ ADMIN_HTML = r"""<!doctype html>
       }).join("");
       gallery.querySelectorAll(".image-card").forEach((card) => {
         card.addEventListener("click", () => selectImage(card.dataset.name).catch((error) => showToast(error.message)));
+      });
+      gallery.querySelectorAll(".delete-image-action").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          deleteImageByName(button.dataset.name).catch((error) => showToast(error.message));
+        });
       });
       hydrateGalleryImages(images);
     }
@@ -1515,10 +1666,13 @@ ADMIN_HTML = r"""<!doctype html>
       $("previewBox").classList.add("empty-preview");
       $("previewBox").textContent = "请选择一张图片";
       $("detailTitle").textContent = "暂无选中图片";
+      $("detailPrompt").textContent = "-";
+      $("detailGenerationSize").textContent = "-";
       $("detailType").textContent = "-";
       $("detailSize").textContent = "-";
       $("detailTime").textContent = "-";
       $("copyImageBtn").disabled = true;
+      $("deleteImageBtn").disabled = true;
     }
 
     async function selectImage(name) {
@@ -1528,10 +1682,13 @@ ADMIN_HTML = r"""<!doctype html>
       $("previewBox").classList.remove("empty-preview");
       $("previewBox").textContent = "图片加载中...";
       $("detailTitle").textContent = image.name;
+      $("detailPrompt").textContent = formatPrompt(image.prompt);
+      $("detailGenerationSize").textContent = formatGenerationSize(image);
       $("detailType").textContent = image.mime_type;
       $("detailSize").textContent = formatBytes(image.size_bytes);
       $("detailTime").textContent = new Date(image.modified_at * 1000).toLocaleString();
       $("copyImageBtn").disabled = false;
+      $("deleteImageBtn").disabled = false;
       renderGallery();
       $("previewBox").innerHTML = `<img src="${escapeAttribute(imageUrl(image))}" alt="${escapeAttribute(image.name)}">`;
     }
@@ -1587,6 +1744,23 @@ ADMIN_HTML = r"""<!doctype html>
       }
     }
 
+    async function deleteImageByName(name) {
+      const image = state.images.find((item) => item.name === name);
+      if (!image) return;
+      if (!window.confirm(`确定删除图片 ${image.name} 吗？服务器缓存文件也会被删除。`)) return;
+      await apiFetch(`/api/images/${encodeURIComponent(image.name)}`, { method: "DELETE" });
+      await clearImageCacheRecords(image);
+      state.images = state.images.filter((item) => item.name !== image.name);
+      if (state.selected && state.selected.name === image.name) clearPreview();
+      renderGallery();
+      showToast("图片已删除");
+    }
+
+    async function deleteSelectedImage() {
+      if (!state.selected) return;
+      await deleteImageByName(state.selected.name);
+    }
+
     $("loginForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       try {
@@ -1636,6 +1810,7 @@ ADMIN_HTML = r"""<!doctype html>
       }
     });
     $("copyImageBtn").addEventListener("click", copySelectedImage);
+    $("deleteImageBtn").addEventListener("click", () => deleteSelectedImage().catch((error) => showToast(error.message)));
 
     $("generateForm").addEventListener("submit", async (event) => {
       event.preventDefault();

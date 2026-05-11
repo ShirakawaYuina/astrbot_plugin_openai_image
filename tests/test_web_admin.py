@@ -58,6 +58,10 @@ def test_image_library_lists_only_supported_images(tmp_path: Path):
     module = _load_module()
     (tmp_path / "20260510_120000_a.png").write_bytes(b"png")
     (tmp_path / "20260510_120001_b.webp").write_bytes(b"webp")
+    (tmp_path / "20260510_120001_b.webp.json").write_text(
+        '{"prompt":"生成一张湖边小屋","size":"1024x1024","mode":"generate"}',
+        encoding="utf-8",
+    )
     (tmp_path / "note.txt").write_text("skip", encoding="utf-8")
 
     library = module.ImageLibrary(tmp_path)
@@ -70,6 +74,9 @@ def test_image_library_lists_only_supported_images(tmp_path: Path):
     ]
     assert images[0]["mime_type"] == "image/webp"
     assert images[0]["url"] == "/api/images/20260510_120001_b.webp"
+    assert images[0]["prompt"] == "生成一张湖边小屋"
+    assert images[0]["generation_size"] == "1024x1024"
+    assert images[0]["mode"] == "generate"
 
 
 def test_image_library_skips_file_deleted_during_listing(
@@ -115,6 +122,31 @@ def test_image_library_finds_metadata_by_name(tmp_path: Path):
 
     assert image["name"] == "demo.png"
     assert image["url"] == "/api/images/demo.png"
+    assert image["prompt"] == ""
+    assert image["generation_size"] == ""
+
+
+def test_image_library_deletes_image_and_sidecar_metadata(tmp_path: Path):
+    module = _load_module()
+    image_path = tmp_path / "demo.png"
+    metadata_path = tmp_path / "demo.png.json"
+    image_path.write_bytes(b"demo")
+    metadata_path.write_text('{"prompt":"删除测试"}', encoding="utf-8")
+    library = module.ImageLibrary(tmp_path)
+
+    removed_name = library.delete_image_by_name("demo.png")
+
+    assert removed_name == "demo.png"
+    assert not image_path.exists()
+    assert not metadata_path.exists()
+
+
+def test_image_library_rejects_delete_path_traversal(tmp_path: Path):
+    module = _load_module()
+    library = module.ImageLibrary(tmp_path)
+
+    with pytest.raises(FileNotFoundError):
+        library.delete_image_by_name("../secret.png")
 
 
 def test_server_accepts_bearer_or_cookie_token(tmp_path: Path):
@@ -273,6 +305,45 @@ async def test_image_handler_accepts_http_only_cookie_token(tmp_path: Path):
         await runner.cleanup()
 
 
+@pytest.mark.asyncio
+async def test_delete_image_handler_removes_server_file_and_metadata(tmp_path: Path):
+    module = _load_module()
+    (tmp_path / "demo.png").write_bytes(b"demo")
+    (tmp_path / "demo.png.json").write_text('{"prompt":"删除测试"}', encoding="utf-8")
+    server = module.WebAdminServer(
+        plugin=SimpleNamespace(),
+        settings=module.WebAdminSettings(
+            enabled=True,
+            host="127.0.0.1",
+            port=7865,
+            password="secret",
+        ),
+        cache_dir=tmp_path,
+    )
+    server._tokens.add("token-1")
+    app = server._create_app()
+    runner = module.web.AppRunner(app)
+    await runner.setup()
+    site = module.web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    try:
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(
+                f"http://127.0.0.1:{port}/api/images/demo.png",
+                headers={"Authorization": "Bearer token-1"},
+            ) as response:
+                assert response.status == 200
+                assert await response.json() == {"deleted": "demo.png"}
+    finally:
+        await runner.cleanup()
+
+    assert not (tmp_path / "demo.png").exists()
+    assert not (tmp_path / "demo.png.json").exists()
+
+
 def test_admin_html_escapes_image_names_and_avoids_url_tokens():
     module = _load_module()
 
@@ -308,6 +379,10 @@ def test_admin_html_preview_actions_match_requested_gallery_flow():
     assert "id=\"copyImageBtn\"" in module.ADMIN_HTML
     assert "addEventListener(\"dblclick\"" in module.ADMIN_HTML
     assert "copySelectedImage" in module.ADMIN_HTML
+    assert "id=\"deleteImageBtn\"" in module.ADMIN_HTML
+    assert "deleteSelectedImage" in module.ADMIN_HTML
+    assert 'method: "DELETE"' in module.ADMIN_HTML
+    assert "clearImageCacheRecords" in module.ADMIN_HTML
     assert "再次生成" not in module.ADMIN_HTML
     assert "用于编辑" not in module.ADMIN_HTML
 
@@ -360,6 +435,26 @@ def test_admin_html_keeps_sidebars_fixed_on_desktop_scroll():
     assert "height: 100vh;" in module.ADMIN_HTML
     assert "overflow-y: auto;" in module.ADMIN_HTML
     assert ".app-shell { display: block; }" in module.ADMIN_HTML
+
+
+def test_admin_html_hides_preview_sidebar_on_settings_page():
+    module = _load_module()
+
+    assert "function updatePreviewVisibility" in module.ADMIN_HTML
+    assert 'document.body.classList.toggle("settings-active", panelId === "settingsPanel");' in module.ADMIN_HTML
+    assert "body.settings-active .preview" in module.ADMIN_HTML
+    assert "body.settings-active .app-shell" in module.ADMIN_HTML
+
+
+def test_admin_html_centers_preview_image_and_shows_prompt_size_metadata():
+    module = _load_module()
+
+    assert "display: grid;" in module.ADMIN_HTML
+    assert "place-items: center;" in module.ADMIN_HTML
+    assert "id=\"detailPrompt\"" in module.ADMIN_HTML
+    assert "id=\"detailGenerationSize\"" in module.ADMIN_HTML
+    assert "formatGenerationSize(image)" in module.ADMIN_HTML
+    assert "formatPrompt(image.prompt)" in module.ADMIN_HTML
 
 
 def test_admin_html_caches_thumbnails_before_original_images():

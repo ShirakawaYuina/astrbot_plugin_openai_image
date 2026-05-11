@@ -26,5 +26,8 @@ def cleanup_cache(cache_dir: Path, max_cache_images: int) -> list[Path]:
     removed_files: list[Path] = []
     for path in image_files[: len(image_files) - normalized_limit]:
         path.unlink()
+        metadata_path = path.with_name(f"{path.name}.json")
+        if metadata_path.is_file():
+            metadata_path.unlink()
         removed_files.append(path)
     return removed_files

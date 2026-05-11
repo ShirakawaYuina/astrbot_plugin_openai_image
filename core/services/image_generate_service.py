@@ -67,10 +67,19 @@ class ImageGenerateService:
                 response_summary,
             )
             raise ValueError(f"{exc}; {response_summary}") from exc
-        return self.cache_store.save_image(
+        image_path = self.cache_store.save_image(
             parsed_response.image_bytes,
             parsed_response.extension,
         )
+        self.cache_store.save_image_metadata(
+            image_path,
+            {
+                "prompt": prompt,
+                "size": size or "",
+                "mode": "generate",
+            },
+        )
+        return image_path
 
     @staticmethod
     def _summarize_response(response_data: Any) -> str:

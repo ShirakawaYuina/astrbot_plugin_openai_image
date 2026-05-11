@@ -42,10 +42,14 @@ class _FakeCacheStore:
     def __init__(self, result_path: Path):
         self.result_path = result_path
         self.saved_images: list[tuple[bytes, str]] = []
+        self.saved_metadata: list[tuple[Path, dict]] = []
 
     def save_image(self, image_bytes: bytes, extension: str) -> Path:
         self.saved_images.append((image_bytes, extension))
         return self.result_path
+
+    def save_image_metadata(self, image_path: Path, metadata: dict) -> None:
+        self.saved_metadata.append((image_path, metadata))
 
 
 class _FakeLogger:
@@ -95,6 +99,16 @@ async def test_generate_service_builds_payload_and_caches_image(tmp_path: Path):
         }
     ]
     assert cache_store.saved_images == [(b"hello", ".png")]
+    assert cache_store.saved_metadata == [
+        (
+            tmp_path / "generated.png",
+            {
+                "prompt": "生成一只小猫",
+                "size": "",
+                "mode": "generate",
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -128,6 +142,16 @@ async def test_generate_service_can_use_images_generations_endpoint(tmp_path: Pa
         }
     ]
     assert cache_store.saved_images == [(b"hello", ".png")]
+    assert cache_store.saved_metadata == [
+        (
+            tmp_path / "generated.png",
+            {
+                "prompt": "生成一只小猫",
+                "size": "",
+                "mode": "generate",
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -215,6 +239,16 @@ async def test_edit_service_builds_multimodal_payload_and_caches_image(
         }
     ]
     assert cache_store.saved_images == [(b"world", ".png")]
+    assert cache_store.saved_metadata == [
+        (
+            tmp_path / "edited.jpg",
+            {
+                "prompt": "改成真人版",
+                "size": "",
+                "mode": "edit",
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio
