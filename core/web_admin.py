@@ -84,25 +84,40 @@ class ImageLibrary:
     ) -> dict[str, Any]:
         """按筛选条件分页返回图片列表，供前端滚动加载使用。"""
 
-        images = self._collect_images(
+        candidates = self._collect_image_candidates(
             keyword=keyword,
             type_filter=type_filter,
             sort=sort,
         )
         start_index = 0
         if cursor:
-            for index, image in enumerate(images):
-                if image["name"] == cursor:
+            for index, candidate in enumerate(candidates):
+                if candidate["name"] == cursor:
                     start_index = index + 1
                     break
+            else:
+                return {
+                    "images": [],
+                    "has_more": False,
+                    "next_cursor": "",
+                }
 
-        page_images = images[start_index : start_index + limit]
+        page_candidates = candidates[start_index : start_index + limit]
+        page_images: list[dict[str, Any]] = []
+        for candidate in page_candidates:
+            try:
+                page_images.append(self._build_image_metadata(candidate["path"]))
+            except (FileNotFoundError, OSError, ValueError):
+                # 分页阶段只读取当前页图片元数据；如果单张图片在读取时被破坏或过大，
+                # 直接跳过该页条目即可，避免整页请求失败。
+                continue
+
         return {
             "images": page_images,
-            "has_more": start_index + limit < len(images),
+            "has_more": start_index + limit < len(candidates),
             "next_cursor": (
                 page_images[-1]["name"]
-                if start_index + limit < len(images) and page_images
+                if start_index + limit < len(candidates) and page_images
                 else ""
             ),
         }
@@ -147,9 +162,32 @@ class ImageLibrary:
     ) -> list[dict[str, Any]]:
         """统一处理图库遍历、筛选和排序，避免分页与全量接口逻辑分叉。"""
 
+        candidates = self._collect_image_candidates(
+            keyword=keyword,
+            type_filter=type_filter,
+            sort=sort,
+        )
+        image_items: list[dict[str, Any]] = []
+        for candidate in candidates:
+            try:
+                image_items.append(self._build_image_metadata(candidate["path"]))
+            except (FileNotFoundError, OSError, ValueError):
+                # 图片缓存可能在并发清理时被删除；跳过即可，避免列表接口偶发 500。
+                continue
+        return image_items
+
+    def _collect_image_candidates(
+        self,
+        *,
+        keyword: str = "",
+        type_filter: str = "",
+        sort: str = "latest",
+    ) -> list[dict[str, Any]]:
+        """先用轻量字段整理候选图片，分页时避免对整库执行 Pillow 读取。"""
+
         keyword_lower = str(keyword or "").strip().lower()
         type_filter_lower = str(type_filter or "").strip().lower()
-        image_items: list[dict[str, Any]] = []
+        candidates: list[dict[str, Any]] = []
         for image_path in self.cache_dir.iterdir():
             if not self._is_supported_image(image_path):
                 continue
@@ -161,20 +199,27 @@ class ImageLibrary:
                 continue
 
             try:
-                image_items.append(self._build_image_metadata(image_path))
-            except (FileNotFoundError, OSError, ValueError):
-                # 图片缓存可能在并发清理时被删除；跳过即可，避免列表接口偶发 500。
+                stat_result = image_path.stat()
+            except FileNotFoundError:
                 continue
+
+            candidates.append(
+                {
+                    "name": image_path.name,
+                    "path": image_path,
+                    "modified_at": int(stat_result.st_mtime),
+                }
+            )
 
         if sort == "oldest":
             return sorted(
-                image_items,
+                candidates,
                 key=lambda item: (int(item["modified_at"]), str(item["name"])),
             )
         if sort == "name":
-            return sorted(image_items, key=lambda item: str(item["name"]))
+            return sorted(candidates, key=lambda item: str(item["name"]))
         return sorted(
-            image_items,
+            candidates,
             key=lambda item: (int(item["modified_at"]), str(item["name"])),
             reverse=True,
         )
@@ -192,6 +237,9 @@ class ImageLibrary:
         stat_result = image_path.stat()
         metadata = cls._read_image_sidecar_metadata(image_path)
         width, height = cls._read_image_dimensions(image_path)
+        aspect_ratio = None
+        if width is not None and height not in (None, 0):
+            aspect_ratio = round(width / height, 6)
         return {
             "name": image_path.name,
             "url": f"/api/images/{image_path.name}",
@@ -200,7 +248,7 @@ class ImageLibrary:
             "modified_at": int(stat_result.st_mtime),
             "width": width,
             "height": height,
-            "aspect_ratio": (width / height) if width and height else 0,
+            "aspect_ratio": aspect_ratio,
             "prompt": str(metadata.get("prompt", "") or ""),
             "generation_size": str(metadata.get("size", "") or ""),
             "mode": str(metadata.get("mode", "") or ""),
@@ -227,14 +275,14 @@ class ImageLibrary:
         return data if isinstance(data, dict) else {}
 
     @staticmethod
-    def _read_image_dimensions(image_path: Path) -> tuple[int, int]:
-        """读取图片宽高；失败时返回零值，避免坏图阻塞整页列表。"""
+    def _read_image_dimensions(image_path: Path) -> tuple[int | None, int | None]:
+        """读取图片宽高；失败时返回未知值，避免坏图阻塞整页列表。"""
 
         try:
             with Image.open(image_path) as image:
                 return int(image.width), int(image.height)
-        except (OSError, ValueError):
-            return 0, 0
+        except (Image.DecompressionBombError, OSError, ValueError):
+            return None, None
 
 
 def create_generation_job(

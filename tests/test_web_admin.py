@@ -124,6 +124,88 @@ def test_image_library_list_images_page_returns_cursor_and_dimensions(tmp_path: 
     assert first_page["next_cursor"] == "20260511_120002_square.png"
 
 
+def test_image_library_list_images_page_returns_empty_for_unknown_cursor(tmp_path: Path):
+    module = _load_module()
+    _write_test_image(tmp_path / "a.png", (1024, 1024))
+    _write_test_image(tmp_path / "b.png", (1024, 1024))
+    library = module.ImageLibrary(tmp_path)
+
+    page = library.list_images_page(
+        limit=2,
+        cursor="missing.png",
+        keyword="",
+        type_filter="",
+        sort="latest",
+    )
+
+    assert page == {"images": [], "has_more": False, "next_cursor": ""}
+
+
+def test_image_library_list_images_page_marks_decompression_bomb_as_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    module = _load_module()
+    _write_test_image(tmp_path / "bomb.png", (1024, 1024))
+    library = module.ImageLibrary(tmp_path)
+
+    def fake_open(_image_path: Path):
+        raise module.Image.DecompressionBombError("image too large")
+
+    monkeypatch.setattr(module.Image, "open", fake_open)
+
+    page = library.list_images_page(
+        limit=1,
+        cursor="",
+        keyword="",
+        type_filter="",
+        sort="latest",
+    )
+
+    assert len(page["images"]) == 1
+    assert page["images"][0]["name"] == "bomb.png"
+    assert page["images"][0]["width"] is None
+    assert page["images"][0]["height"] is None
+    assert page["images"][0]["aspect_ratio"] is None
+
+
+def test_image_library_list_images_page_only_opens_requested_page_images(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    module = _load_module()
+    _write_test_image(tmp_path / "a.png", (1024, 1024))
+    _write_test_image(tmp_path / "b.png", (1024, 1024))
+    _write_test_image(tmp_path / "c.png", (1024, 1024))
+    library = module.ImageLibrary(tmp_path)
+    opened_paths: list[str] = []
+
+    class FakeImage:
+        width = 1024
+        height = 1024
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_open(image_path: Path):
+        opened_paths.append(image_path.name)
+        return FakeImage()
+
+    monkeypatch.setattr(module.Image, "open", fake_open)
+
+    page = library.list_images_page(
+        limit=1,
+        cursor="",
+        keyword="",
+        type_filter="",
+        sort="name",
+    )
+
+    assert [item["name"] for item in page["images"]] == ["a.png"]
+    assert opened_paths == ["a.png"]
+
+
 def test_image_library_skips_file_deleted_during_listing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
