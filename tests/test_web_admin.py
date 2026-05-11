@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib
 import re
 import sys
+import struct
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,6 +21,28 @@ for candidate in (str(PARENT), str(ROOT)):
 
 def _load_module():
     return importlib.import_module("astrbot_plugin_openai_image.core.web_admin")
+
+
+def _write_test_image(path: Path, size: tuple[int, int]) -> None:
+    width, height = size
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr_data = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    ihdr = (
+        struct.pack(">I", len(ihdr_data))
+        + b"IHDR"
+        + ihdr_data
+        + struct.pack(">I", zlib.crc32(b"IHDR" + ihdr_data) & 0xFFFFFFFF)
+    )
+    scanline = b"\x00" + (b"\x30\x60\x90" * width)
+    compressed = zlib.compress(scanline * height, level=9)
+    idat = (
+        struct.pack(">I", len(compressed))
+        + b"IDAT"
+        + compressed
+        + struct.pack(">I", zlib.crc32(b"IDAT" + compressed) & 0xFFFFFFFF)
+    )
+    iend = struct.pack(">I", 0) + b"IEND" + struct.pack(">I", zlib.crc32(b"IEND") & 0xFFFFFFFF)
+    path.write_bytes(signature + ihdr + idat + iend)
 
 
 def test_admin_settings_disabled_when_password_empty():
@@ -80,6 +104,26 @@ def test_image_library_lists_only_supported_images(tmp_path: Path):
     assert images[0]["mode"] == "generate"
 
 
+def test_image_library_list_images_page_returns_cursor_and_dimensions(tmp_path: Path):
+    module = _load_module()
+    _write_test_image(tmp_path / "20260511_120001_landscape.png", (1536, 1024))
+    _write_test_image(tmp_path / "20260511_120002_square.png", (1024, 1024))
+    _write_test_image(tmp_path / "20260511_120003_portrait.png", (1024, 1536))
+    library = module.ImageLibrary(tmp_path)
+
+    first_page = library.list_images_page(limit=2, cursor="", keyword="", type_filter="", sort="latest")
+
+    assert [item["name"] for item in first_page["images"]] == [
+        "20260511_120003_portrait.png",
+        "20260511_120002_square.png",
+    ]
+    assert first_page["images"][0]["width"] == 1024
+    assert first_page["images"][0]["height"] == 1536
+    assert first_page["images"][0]["aspect_ratio"] == pytest.approx(1024 / 1536, rel=1e-3)
+    assert first_page["has_more"] is True
+    assert first_page["next_cursor"] == "20260511_120002_square.png"
+
+
 def test_image_library_skips_file_deleted_during_listing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -93,6 +137,47 @@ def test_image_library_skips_file_deleted_during_listing(
     monkeypatch.setattr(library, "_build_image_metadata", fake_build_metadata)
 
     assert library.list_images() == []
+
+
+@pytest.mark.asyncio
+async def test_list_images_handler_respects_limit_cursor_and_sort(tmp_path: Path):
+    module = _load_module()
+    _write_test_image(tmp_path / "a_landscape.png", (1536, 1024))
+    _write_test_image(tmp_path / "b_square.png", (1024, 1024))
+    _write_test_image(tmp_path / "c_portrait.png", (1024, 1536))
+    server = module.WebAdminServer(
+        plugin=SimpleNamespace(),
+        settings=module.WebAdminSettings(
+            enabled=True,
+            host="127.0.0.1",
+            port=7865,
+            password="secret",
+        ),
+        cache_dir=tmp_path,
+    )
+    server._tokens.add("token-1")
+    app = server._create_app()
+    runner = module.web.AppRunner(app)
+    await runner.setup()
+    site = module.web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    try:
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"http://127.0.0.1:{port}/api/images?limit=2&sort=name",
+                headers={"Authorization": "Bearer token-1"},
+            ) as response:
+                assert response.status == 200
+                payload = await response.json()
+    finally:
+        await runner.cleanup()
+
+    assert [item["name"] for item in payload["images"]] == ["a_landscape.png", "b_square.png"]
+    assert payload["has_more"] is True
+    assert payload["next_cursor"] == "b_square.png"
 
 
 def test_image_library_rejects_path_traversal(tmp_path: Path):

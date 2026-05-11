@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from aiohttp import web
+from PIL import Image
 
 from astrbot.api import logger
 
@@ -70,22 +71,37 @@ class ImageLibrary:
     def list_images(self) -> list[dict[str, Any]]:
         """按更新时间倒序返回可在后台展示的图片元数据。"""
 
-        image_items: list[dict[str, Any]] = []
-        for image_path in self.cache_dir.iterdir():
-            if not self._is_supported_image(image_path):
-                continue
+        return self._collect_images(sort="latest")
 
-            try:
-                image_items.append(self._build_image_metadata(image_path))
-            except FileNotFoundError:
-                # 图片缓存会在生成新图后自动清理旧文件；跳过被并发删除的条目，避免图库偶发 500。
-                continue
+    def list_images_page(
+        self,
+        *,
+        limit: int,
+        cursor: str,
+        keyword: str,
+        type_filter: str,
+        sort: str,
+    ) -> dict[str, Any]:
+        """按筛选条件分页返回图片列表，供前端滚动加载使用。"""
 
-        return sorted(
-            image_items,
-            key=lambda item: (int(item["modified_at"]), str(item["name"])),
-            reverse=True,
+        images = self._collect_images(
+            keyword=keyword,
+            type_filter=type_filter,
+            sort=sort,
         )
+        start_index = 0
+        if cursor:
+            for index, image in enumerate(images):
+                if image["name"] == cursor:
+                    start_index = index + 1
+                    break
+
+        page_images = images[start_index : start_index + limit]
+        return {
+            "images": page_images,
+            "has_more": start_index + limit < len(images),
+            "next_cursor": page_images[-1]["name"] if len(page_images) == limit else "",
+        }
 
     def get_image_by_name(self, file_name: str) -> dict[str, Any]:
         """按文件名返回单张图片元数据，供生成/编辑完成后刷新选中态。"""
@@ -118,6 +134,47 @@ class ImageLibrary:
             raise FileNotFoundError("图片文件不存在")
         return image_path
 
+    def _collect_images(
+        self,
+        *,
+        keyword: str = "",
+        type_filter: str = "",
+        sort: str = "latest",
+    ) -> list[dict[str, Any]]:
+        """统一处理图库遍历、筛选和排序，避免分页与全量接口逻辑分叉。"""
+
+        keyword_lower = str(keyword or "").strip().lower()
+        type_filter_lower = str(type_filter or "").strip().lower()
+        image_items: list[dict[str, Any]] = []
+        for image_path in self.cache_dir.iterdir():
+            if not self._is_supported_image(image_path):
+                continue
+            if keyword_lower and keyword_lower not in image_path.name.lower():
+                continue
+            if type_filter_lower and not image_path.name.lower().endswith(
+                type_filter_lower
+            ):
+                continue
+
+            try:
+                image_items.append(self._build_image_metadata(image_path))
+            except (FileNotFoundError, OSError, ValueError):
+                # 图片缓存可能在并发清理时被删除；跳过即可，避免列表接口偶发 500。
+                continue
+
+        if sort == "oldest":
+            return sorted(
+                image_items,
+                key=lambda item: (int(item["modified_at"]), str(item["name"])),
+            )
+        if sort == "name":
+            return sorted(image_items, key=lambda item: str(item["name"]))
+        return sorted(
+            image_items,
+            key=lambda item: (int(item["modified_at"]), str(item["name"])),
+            reverse=True,
+        )
+
     @staticmethod
     def _is_supported_image(path: Path) -> bool:
         """判断路径是否为后台允许展示的图片文件。"""
@@ -130,12 +187,16 @@ class ImageLibrary:
 
         stat_result = image_path.stat()
         metadata = cls._read_image_sidecar_metadata(image_path)
+        width, height = cls._read_image_dimensions(image_path)
         return {
             "name": image_path.name,
             "url": f"/api/images/{image_path.name}",
             "mime_type": _guess_mime_type(image_path),
             "size_bytes": stat_result.st_size,
             "modified_at": int(stat_result.st_mtime),
+            "width": width,
+            "height": height,
+            "aspect_ratio": (width / height) if width and height else 0,
             "prompt": str(metadata.get("prompt", "") or ""),
             "generation_size": str(metadata.get("size", "") or ""),
             "mode": str(metadata.get("mode", "") or ""),
@@ -160,6 +221,16 @@ class ImageLibrary:
             # 元数据缺失或损坏不应影响图库浏览，前端会展示“未记录”。
             return {}
         return data if isinstance(data, dict) else {}
+
+    @staticmethod
+    def _read_image_dimensions(image_path: Path) -> tuple[int, int]:
+        """读取图片宽高；失败时返回零值，避免坏图阻塞整页列表。"""
+
+        try:
+            with Image.open(image_path) as image:
+                return int(image.width), int(image.height)
+        except (OSError, ValueError):
+            return 0, 0
 
 
 def create_generation_job(
@@ -310,7 +381,21 @@ class WebAdminServer:
         auth_response = self._require_auth(request)
         if auth_response is not None:
             return auth_response
-        return web.json_response({"images": self.library.list_images()})
+        query = request.query
+        limit = _normalize_limit(query.get("limit"), default=40, minimum=1, maximum=120)
+        cursor = str(query.get("cursor", "") or "").strip()
+        keyword = str(query.get("keyword", "") or "").strip()
+        type_filter = str(query.get("type_filter", query.get("type", "")) or "").strip()
+        sort = _normalize_sort(query.get("sort"))
+        return web.json_response(
+            self.library.list_images_page(
+                limit=limit,
+                cursor=cursor,
+                keyword=keyword,
+                type_filter=type_filter,
+                sort=sort,
+            )
+        )
 
     async def _handle_get_image(self, request: web.Request) -> web.StreamResponse:
         """读取缓存图片文件，供缩略图和大图预览共同使用。"""
@@ -549,6 +634,31 @@ def _normalize_port(value: Any) -> int:
     if 1 <= port <= 65535:
         return port
     return DEFAULT_ADMIN_PORT
+
+
+def _normalize_limit(
+    value: Any,
+    *,
+    default: int = 40,
+    minimum: int = 1,
+    maximum: int = 120,
+) -> int:
+    """规范分页大小，避免前端传入异常值拖垮列表接口。"""
+
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, limit))
+
+
+def _normalize_sort(value: Any) -> str:
+    """将排序参数收敛为后端支持的有限集合。"""
+
+    sort = str(value or "latest").strip().lower()
+    if sort in {"latest", "oldest", "name"}:
+        return sort
+    return "latest"
 
 
 def _truncate_log_text(value: str, max_length: int = LOG_PROMPT_MAX_LENGTH) -> str:
