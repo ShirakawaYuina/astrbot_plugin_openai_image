@@ -206,6 +206,45 @@ def test_image_library_list_images_page_only_opens_requested_page_images(
     assert opened_paths == ["a.png"]
 
 
+def test_image_library_list_images_page_returns_empty_page_when_slice_disappears(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    module = _load_module()
+    _write_test_image(tmp_path / "a.png", (1024, 1024))
+    _write_test_image(tmp_path / "b.png", (1024, 1024))
+    _write_test_image(tmp_path / "c.png", (1024, 1024))
+    library = module.ImageLibrary(tmp_path)
+
+    def fake_build_metadata(image_path: Path):
+        if image_path.name in {"a.png", "b.png"}:
+            raise FileNotFoundError("queued image disappeared")
+        return {
+            "name": image_path.name,
+            "url": f"/api/images/{image_path.name}",
+            "mime_type": "image/png",
+            "size_bytes": 1,
+            "modified_at": 1,
+            "width": 1024,
+            "height": 1024,
+            "aspect_ratio": 1.0,
+            "prompt": "",
+            "generation_size": "",
+            "mode": "",
+        }
+
+    monkeypatch.setattr(library, "_build_image_metadata", fake_build_metadata)
+
+    page = library.list_images_page(
+        limit=2,
+        cursor="",
+        keyword="",
+        type_filter="",
+        sort="name",
+    )
+
+    assert page == {"images": [], "has_more": False, "next_cursor": ""}
+
+
 def test_image_library_skips_file_deleted_during_listing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

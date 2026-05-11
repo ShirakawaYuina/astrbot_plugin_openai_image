@@ -112,6 +112,13 @@ class ImageLibrary:
                 # 直接跳过该页条目即可，避免整页请求失败。
                 continue
 
+        if not page_images:
+            return {
+                "images": [],
+                "has_more": False,
+                "next_cursor": "",
+            }
+
         return {
             "images": page_images,
             "has_more": start_index + limit < len(candidates),
