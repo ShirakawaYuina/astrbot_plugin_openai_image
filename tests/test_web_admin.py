@@ -281,20 +281,25 @@ def test_admin_html_escapes_image_names_and_avoids_url_tokens():
     assert "?token=" not in module.ADMIN_HTML
 
 
-def test_admin_html_uses_unified_generate_edit_panel_and_size_presets():
+def test_admin_html_uses_separate_generate_edit_pages_and_size_presets():
     module = _load_module()
 
-    assert "id=\"taskModeGenerate\"" in module.ADMIN_HTML
-    assert "id=\"taskModeEdit\"" in module.ADMIN_HTML
+    assert "id=\"generatePanel\"" in module.ADMIN_HTML
+    assert "id=\"editPanel\"" in module.ADMIN_HTML
+    assert "id=\"generateForm\"" in module.ADMIN_HTML
+    assert "id=\"editForm\"" in module.ADMIN_HTML
     assert "id=\"generateSizePreset\"" in module.ADMIN_HTML
     assert "id=\"generateCustomSize\"" in module.ADMIN_HTML
     assert "id=\"editSizePreset\"" in module.ADMIN_HTML
     assert "id=\"editCustomSize\"" in module.ADMIN_HTML
     assert "value=\"custom\"" in module.ADMIN_HTML
     assert "function resolveSizeValue" in module.ADMIN_HTML
-    assert "id=\"generateTab\"" not in module.ADMIN_HTML
-    assert "id=\"editTab\"" not in module.ADMIN_HTML
-    assert "id=\"editForm\"" not in module.ADMIN_HTML
+    assert "id=\"taskPanel\"" not in module.ADMIN_HTML
+    assert "id=\"taskForm\"" not in module.ADMIN_HTML
+    assert "data-scroll-target" not in module.ADMIN_HTML
+    assert "function showPanel" in module.ADMIN_HTML
+    assert "data-panel=\"generatePanel\"" in module.ADMIN_HTML
+    assert "data-panel=\"editPanel\"" in module.ADMIN_HTML
 
 
 def test_admin_html_preview_actions_match_requested_gallery_flow():
