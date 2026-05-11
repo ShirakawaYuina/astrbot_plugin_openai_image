@@ -190,7 +190,8 @@ def create_edit_job(
     *,
     plugin: Any,
     prompt: str,
-    data_url: str,
+    data_url: str = "",
+    data_urls: list[str] | None = None,
     size: str | None,
     quality: str,
     moderation: str,
@@ -198,10 +199,16 @@ def create_edit_job(
     """创建图片编辑任务闭包，统一复用插件既有编辑服务。"""
 
     async def _job() -> Path:
+        # 网页端允许多张参考图；保留单图参数分支，避免其它调用方仍使用旧接口时失效。
+        image_kwargs = (
+            {"data_urls": data_urls}
+            if data_urls is not None
+            else {"data_url": data_url}
+        )
         return await plugin._edit_service.edit(
             model=plugin._get_configured_model(),
             prompt=prompt,
-            data_url=data_url,
+            **image_kwargs,
             negative_prompt=plugin._get_negative_prompt(),
             endpoint_type=plugin._get_endpoint_type(),
             size=plugin._resolve_output_size(size),
@@ -383,17 +390,18 @@ class WebAdminServer:
 
         reader = await request.multipart()
         fields: dict[str, str] = {}
-        image_data_url = ""
+        image_data_urls: list[str] = []
         async for part in reader:
             if part.name == "image":
-                image_data_url = await _multipart_image_to_data_url(part)
+                # 前端会为每张参考图追加一个同名 image 字段，这里按顺序收集后交给编辑服务。
+                image_data_urls.append(await _multipart_image_to_data_url(part))
             else:
                 fields[str(part.name)] = (await part.text()).strip()
 
         prompt = fields.get("prompt", "").strip()
         if not prompt:
             return web.json_response({"error": "提示词不能为空"}, status=400)
-        if not image_data_url:
+        if not image_data_urls:
             return web.json_response({"error": "请上传待编辑图片"}, status=400)
         size = _optional_text(fields.get("size"))
         quality = _option_text(fields.get("quality"), "auto")
@@ -412,7 +420,7 @@ class WebAdminServer:
             job_coro=create_edit_job(
                 plugin=self.plugin,
                 prompt=prompt,
-                data_url=image_data_url,
+                data_urls=image_data_urls,
                 size=size,
                 quality=quality,
                 moderation=moderation,
@@ -910,10 +918,51 @@ ADMIN_HTML = r"""<!doctype html>
       color: var(--primary);
       box-shadow: 0 8px 18px rgba(48, 76, 126, 0.09);
     }
-    .form-grid {
+    .workflow-layout {
+      display: grid;
+      gap: 18px;
+    }
+    .workspace-result-panel {
+      display: grid;
+      gap: 10px;
+    }
+    .result-box {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      min-height: 280px;
+      padding: 14px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.48);
+    }
+    .result-box.empty-gallery {
+      display: grid;
+      grid-template-columns: 1fr;
+      place-items: center;
+    }
+    .result-box img {
+      width: 100%;
+      height: 100%;
+      min-height: 248px;
+      max-height: 420px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #edf3fb;
+      cursor: zoom-in;
+    }
+    .action-panel {
       display: grid;
       grid-template-columns: minmax(260px, 1fr) 320px;
       gap: 22px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.68);
+    }
+    .action-panel-single {
+      grid-template-columns: 1fr;
     }
     label {
       display: block;
@@ -941,10 +990,14 @@ ADMIN_HTML = r"""<!doctype html>
       margin-top: 12px;
     }
     .field-row .control { width: 100%; height: 40px; }
+    .edit-options {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
     .custom-size { margin-top: 10px; }
     .reference-panel {
       display: grid;
       gap: 12px;
+      align-content: start;
     }
     .paste-zone {
       display: grid;
@@ -962,14 +1015,19 @@ ADMIN_HTML = r"""<!doctype html>
       border-color: var(--primary);
       box-shadow: 0 0 0 3px rgba(61, 115, 246, 0.12);
     }
-    .paste-preview {
+    .reference-thumbs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .reference-thumb {
       overflow: hidden;
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 8px;
       background: #edf3fb;
       aspect-ratio: 4 / 3;
     }
-    .paste-preview img {
+    .reference-thumb img {
       width: 100%;
       height: 100%;
       object-fit: contain;
@@ -1244,26 +1302,28 @@ ADMIN_HTML = r"""<!doctype html>
             <p class="muted">输入提示词后生成图片，完成后会自动进入右侧预览并写入历史图库。</p>
           </div>
         </div>
-        <form id="generateForm" class="form-grid">
-          <div>
-            <label for="generatePrompt">提示词</label>
-            <textarea id="generatePrompt" placeholder="例如：浅色自然光下的现代别墅，干净构图，高细节。"></textarea>
-            <div class="field-row">
-              <div><label for="generateCount">数量</label><input id="generateCount" class="control" type="number" min="1" max="4" value="1"></div>
-              <div><label for="generateSizePreset">生图尺寸</label><select id="generateSizePreset" class="control"><option value="auto">自动</option><option value="1024x1024">方图 1024x1024</option><option value="1024x1536">竖图 1024x1536</option><option value="1536x1024">横图 1536x1024</option><option value="2048x2048">2K 方图</option><option value="2560x1440">2K 横图</option><option value="1440x2560">2K 竖图</option><option value="custom">自定义</option></select><input id="generateCustomSize" class="control custom-size hidden" type="text" placeholder="例如 1280x1280"></div>
-              <div><label for="generateQuality">质量</label><select id="generateQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
-              <div><label for="generateModeration">审核</label><select id="generateModeration" class="control"><option>low</option><option>auto</option></select></div>
+        <div class="workflow-layout">
+          <div class="workspace-result-panel">
+            <label>生成结果</label>
+            <div id="generateResultBox" class="result-box empty-gallery">生成的图片会显示在这里，并同步进入右侧预览和历史图库。</div>
+          </div>
+          <form id="generateForm" class="action-panel action-panel-single">
+            <div>
+              <label for="generatePrompt">提示词</label>
+              <textarea id="generatePrompt" placeholder="例如：浅色自然光下的现代别墅，干净构图，高细节。"></textarea>
+              <div class="field-row">
+                <div><label for="generateCount">数量</label><input id="generateCount" class="control" type="number" min="1" max="4" value="1"></div>
+                <div><label for="generateSizePreset">生图尺寸</label><select id="generateSizePreset" class="control"><option value="auto">自动</option><option value="1024x1024">方图 1024x1024</option><option value="1024x1536">竖图 1024x1536</option><option value="1536x1024">横图 1536x1024</option><option value="2048x2048">2K 方图</option><option value="2560x1440">2K 横图</option><option value="1440x2560">2K 竖图</option><option value="custom">自定义</option></select><input id="generateCustomSize" class="control custom-size hidden" type="text" placeholder="例如 1280x1280"></div>
+                <div><label for="generateQuality">质量</label><select id="generateQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
+                <div><label for="generateModeration">审核</label><select id="generateModeration" class="control"><option>low</option><option>auto</option></select></div>
+              </div>
+              <button id="generateSubmit" class="btn primary" type="submit" style="width:100%; margin-top:16px;">
+                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="M6 6l2.8 2.8"/><path d="M15.2 15.2L18 18"/><path d="M18 6l-2.8 2.8"/><path d="M8.8 15.2L6 18"/></svg>
+                生成图片
+              </button>
             </div>
-            <button id="generateSubmit" class="btn primary" type="submit" style="width:100%; margin-top:16px;">
-              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="M6 6l2.8 2.8"/><path d="M15.2 15.2L18 18"/><path d="M18 6l-2.8 2.8"/><path d="M8.8 15.2L6 18"/></svg>
-              生成图片
-            </button>
-          </div>
-          <div class="reference-panel">
-            <label>结果提示</label>
-            <div class="empty-gallery">生成完成后，图片会自动出现在右侧预览和历史图库中。</div>
-          </div>
-        </form>
+          </form>
+        </div>
       </section>
 
       <section id="editPanel" class="workspace page-panel hidden">
@@ -1273,26 +1333,32 @@ ADMIN_HTML = r"""<!doctype html>
             <p class="muted">上传或粘贴参考图片，再输入编辑提示词生成新图。</p>
           </div>
         </div>
-        <form id="editForm" class="form-grid">
-          <div>
-            <label for="editPrompt">编辑提示词</label>
-            <textarea id="editPrompt" placeholder="例如：保留主体构图，改成柔和水彩风格，背景更明亮。"></textarea>
-            <div class="field-row">
-              <div style="grid-column:span 2;"><label for="editImage">参考图片</label><input id="editImage" class="control" type="file" accept="image/png,image/jpeg,image/webp"></div>
-              <div><label for="editSizePreset">编辑尺寸</label><select id="editSizePreset" class="control"><option value="auto">自动</option><option value="1024x1024">方图 1024x1024</option><option value="1024x1536">竖图 1024x1536</option><option value="1536x1024">横图 1536x1024</option><option value="2048x2048">2K 方图</option><option value="2560x1440">2K 横图</option><option value="1440x2560">2K 竖图</option><option value="custom">自定义</option></select><input id="editCustomSize" class="control custom-size hidden" type="text" placeholder="例如 1280x1280"></div>
-              <div><label for="editQuality">编辑质量</label><select id="editQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
+        <div class="workflow-layout">
+          <div class="workspace-result-panel">
+            <label>编辑结果</label>
+            <div id="editResultBox" class="result-box empty-gallery">编辑后的图片会显示在这里，并同步进入右侧预览和历史图库。</div>
+          </div>
+          <form id="editForm" class="action-panel">
+            <div>
+              <label for="editPrompt">编辑提示词</label>
+              <textarea id="editPrompt" placeholder="例如：保留主体构图，改成柔和水彩风格，背景更明亮。"></textarea>
+              <div class="field-row edit-options">
+                <div><label for="editSizePreset">编辑尺寸</label><select id="editSizePreset" class="control"><option value="auto">自动</option><option value="1024x1024">方图 1024x1024</option><option value="1024x1536">竖图 1024x1536</option><option value="1536x1024">横图 1536x1024</option><option value="2048x2048">2K 方图</option><option value="2560x1440">2K 横图</option><option value="1440x2560">2K 竖图</option><option value="custom">自定义</option></select><input id="editCustomSize" class="control custom-size hidden" type="text" placeholder="例如 1280x1280"></div>
+                <div><label for="editQuality">编辑质量</label><select id="editQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
+              </div>
+              <button id="editSubmit" class="btn primary" type="submit" style="width:100%; margin-top:16px;">
+                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+                编辑图片
+              </button>
             </div>
-            <button id="editSubmit" class="btn primary" type="submit" style="width:100%; margin-top:16px;">
-              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
-              编辑图片
-            </button>
-          </div>
-          <div id="referencePanel" class="reference-panel">
-            <label>参考图片预览</label>
-            <div id="pasteImageZone" class="paste-zone" tabindex="0">点击这里后按 Ctrl+V 粘贴参考图片，或使用左侧文件选择。</div>
-            <div id="pasteImagePreview" class="paste-preview hidden"></div>
-          </div>
-        </form>
+            <div id="referencePanel" class="reference-panel">
+              <label for="editImage">参考图片</label>
+              <input id="editImage" class="control" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+              <div id="pasteImageZone" class="paste-zone" tabindex="0">点击这里后按 Ctrl+V 粘贴参考图片，可多次粘贴叠加。</div>
+              <div id="referenceThumbs" class="reference-thumbs"></div>
+            </div>
+          </form>
+        </div>
       </section>
 
       <section id="settingsPanel" class="workspace page-panel hidden">
@@ -1340,12 +1406,13 @@ ADMIN_HTML = r"""<!doctype html>
       images: [],
       selected: null,
       activePanel: "galleryPanel",
-      referenceImageFile: null,
+      referenceImageFiles: [],
       imageCacheDb: null,
     };
     const $ = (id) => document.getElementById(id);
     const IMAGE_CACHE_DB_NAME = "openai-image-admin-cache";
     const IMAGE_CACHE_STORE = "images";
+    const REFERENCE_IMAGE_PREVIEW_URLS = new WeakMap();
 
     function authHeaders(extra = {}) {
       return { ...extra, Authorization: `Bearer ${state.token}` };
@@ -1705,6 +1772,30 @@ ADMIN_HTML = r"""<!doctype html>
       $("previewBox").innerHTML = `<img src="${escapeAttribute(imageUrl(image))}" alt="${escapeAttribute(image.name)}">`;
     }
 
+    function renderResultImages(targetId, imageNames) {
+      // 生成/编辑完成后，把本次结果留在操作区上方，减少用户在右侧预览和表单之间来回找图。
+      const box = $(targetId);
+      const names = Array.isArray(imageNames) ? imageNames.filter(Boolean) : [];
+      const images = names
+        .map((name) => state.images.find((item) => item.name === name))
+        .filter(Boolean);
+
+      box.classList.toggle("empty-gallery", images.length === 0);
+      if (!images.length) {
+        box.textContent = targetId === "generateResultBox"
+          ? "生成的图片会显示在这里，并同步进入右侧预览和历史图库。"
+          : "编辑后的图片会显示在这里，并同步进入右侧预览和历史图库。";
+        return;
+      }
+
+      box.innerHTML = images.map((image) => `
+        <img src="${escapeAttribute(imageUrl(image))}" alt="${escapeAttribute(image.name)}" title="双击查看原图">
+      `).join("");
+      box.querySelectorAll("img").forEach((imageNode, index) => {
+        imageNode.addEventListener("dblclick", () => window.open(imageUrl(images[index]), "_blank", "noopener"));
+      });
+    }
+
     async function loadImages(preferredName = "") {
       const data = await apiFetch("/api/images");
       state.images = data.images || [];
@@ -1716,31 +1807,49 @@ ADMIN_HTML = r"""<!doctype html>
       }
     }
 
-    function setReferenceImageFile(file) {
+    function renderReferenceThumbnails() {
+      // 多参考图只在编辑页右侧显示缩略图，真正提交时仍按文件对象逐张追加到 FormData。
+      const files = state.referenceImageFiles;
+      $("referenceThumbs").innerHTML = files.map((file, index) => {
+        if (!REFERENCE_IMAGE_PREVIEW_URLS.has(file)) {
+          REFERENCE_IMAGE_PREVIEW_URLS.set(file, URL.createObjectURL(file));
+        }
+        const previewUrl = REFERENCE_IMAGE_PREVIEW_URLS.get(file);
+        return `
+          <div class="reference-thumb">
+            <img src="${escapeAttribute(previewUrl)}" alt="参考图片 ${index + 1}">
+          </div>
+        `;
+      }).join("");
+      $("pasteImageZone").textContent = files.length
+        ? `已载入 ${files.length} 张参考图片，可继续粘贴或选择文件叠加。`
+        : "点击这里后按 Ctrl+V 粘贴参考图片，可多次粘贴叠加。";
+    }
+
+    function addReferenceImageFile(file) {
       if (!file || !file.type.startsWith("image/")) {
         showToast("请提供图片文件");
         return;
       }
-      state.referenceImageFile = file;
-      const previewUrl = URL.createObjectURL(file);
-      $("pasteImagePreview").classList.remove("hidden");
-      $("pasteImagePreview").innerHTML = `<img src="${escapeAttribute(previewUrl)}" alt="参考图片预览">`;
-      $("pasteImageZone").textContent = "参考图片已载入，可继续粘贴替换。";
+      state.referenceImageFiles.push(file);
+      renderReferenceThumbnails();
     }
 
     function handlePasteImage(event) {
       const items = event.clipboardData && event.clipboardData.items;
       if (!items) return;
+      let addedCount = 0;
       for (const item of items) {
         if (item.type && item.type.startsWith("image/")) {
           const file = item.getAsFile();
           if (file) {
             event.preventDefault();
-            setReferenceImageFile(file);
-            return;
+            addReferenceImageFile(file);
+            addedCount += 1;
           }
         }
       }
+      if (addedCount > 1) showToast(`已添加 ${addedCount} 张参考图片`);
     }
 
     async function copySelectedImage() {
@@ -1798,7 +1907,10 @@ ADMIN_HTML = r"""<!doctype html>
     $("sortFilter").addEventListener("change", renderGallery);
     $("generateSizePreset").addEventListener("change", () => syncCustomSize("generateSizePreset", "generateCustomSize"));
     $("editSizePreset").addEventListener("change", () => syncCustomSize("editSizePreset", "editCustomSize"));
-    $("editImage").addEventListener("change", () => setReferenceImageFile($("editImage").files[0]));
+    $("editImage").addEventListener("change", () => {
+      Array.from($("editImage").files || []).forEach(addReferenceImageFile);
+      $("editImage").value = "";
+    });
     $("pasteImageZone").addEventListener("paste", handlePasteImage);
     $("clearLocalCacheBtn").addEventListener("click", async () => {
       await clearLocalImageCache();
@@ -1829,7 +1941,7 @@ ADMIN_HTML = r"""<!doctype html>
       const submit = $("generateSubmit");
       submit.disabled = true;
       try {
-        let lastImage = "";
+        const resultImages = [];
         const count = Math.max(1, Math.min(4, Number($("generateCount").value || 1)));
         for (let index = 0; index < count; index += 1) {
           const data = await apiFetch("/api/generate", {
@@ -1842,10 +1954,12 @@ ADMIN_HTML = r"""<!doctype html>
               moderation: $("generateModeration").value,
             }),
           });
-          lastImage = data.image && data.image.name;
+          if (data.image && data.image.name) resultImages.push(data.image.name);
         }
         showToast("图片生成完成");
+        const lastImage = resultImages[resultImages.length - 1] || "";
         await loadImages(lastImage);
+        renderResultImages("generateResultBox", resultImages);
       } catch (error) {
         showToast(error.message);
       } finally {
@@ -1858,8 +1972,8 @@ ADMIN_HTML = r"""<!doctype html>
       const submit = $("editSubmit");
       submit.disabled = true;
       try {
-        const file = state.referenceImageFile || $("editImage").files[0];
-        if (!file) {
+        const files = state.referenceImageFiles;
+        if (!files.length) {
           showToast("请先上传或粘贴参考图片");
           return;
         }
@@ -1868,11 +1982,14 @@ ADMIN_HTML = r"""<!doctype html>
         body.append("size", resolveSizeValue("editSizePreset", "editCustomSize"));
         body.append("quality", $("editQuality").value);
         body.append("moderation", "low");
-        body.append("image", file);
+        files.forEach((file) => {
+          body.append("image", file);
+        });
         const data = await apiFetch("/api/edit", { method: "POST", body });
         const lastImage = data.image && data.image.name;
         showToast("图片编辑完成");
         await loadImages(lastImage);
+        renderResultImages("editResultBox", [lastImage]);
       } catch (error) {
         showToast(error.message);
       } finally {

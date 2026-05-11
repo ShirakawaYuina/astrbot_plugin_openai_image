@@ -345,6 +345,92 @@ async def test_delete_image_handler_removes_server_file_and_metadata(tmp_path: P
     assert not (tmp_path / "demo.png.json").exists()
 
 
+@pytest.mark.asyncio
+async def test_edit_handler_accepts_multiple_reference_images(tmp_path: Path):
+    module = _load_module()
+    output_path = tmp_path / "edited.png"
+    output_path.write_bytes(b"edited")
+
+    class FakeEditService:
+        async def edit(self, **kwargs):
+            self.kwargs = kwargs
+            return output_path
+
+    class FakeTaskService:
+        async def run_task(self, *, mode, job_coro, stage_name):
+            result_path = await job_coro()
+            return {
+                "success": True,
+                "mode": mode,
+                "payload": result_path,
+                "timings": {},
+            }
+
+    plugin = SimpleNamespace(
+        _edit_service=FakeEditService(),
+        _task_service=FakeTaskService(),
+        _ensure_ready=lambda: None,
+        _get_configured_model=lambda: "gpt-image-test",
+        _get_negative_prompt=lambda: "",
+        _get_endpoint_type=lambda: "responses",
+        _resolve_output_size=lambda size: size,
+    )
+    server = module.WebAdminServer(
+        plugin=plugin,
+        settings=module.WebAdminSettings(
+            enabled=True,
+            host="127.0.0.1",
+            port=7865,
+            password="secret",
+        ),
+        cache_dir=tmp_path,
+    )
+    server._tokens.add("token-1")
+    app = server._create_app()
+    runner = module.web.AppRunner(app)
+    await runner.setup()
+    site = module.web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    try:
+        import aiohttp
+
+        form = aiohttp.FormData()
+        form.add_field("prompt", "按两张参考图重绘")
+        form.add_field("size", "auto")
+        form.add_field("quality", "high")
+        form.add_field("moderation", "low")
+        form.add_field(
+            "image",
+            b"first",
+            filename="first.png",
+            content_type="image/png",
+        )
+        form.add_field(
+            "image",
+            b"second",
+            filename="second.webp",
+            content_type="image/webp",
+        )
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{port}/api/edit",
+                data=form,
+                headers={"Authorization": "Bearer token-1"},
+            ) as response:
+                assert response.status == 200
+                data = await response.json()
+                assert data["image"]["name"] == "edited.png"
+    finally:
+        await runner.cleanup()
+
+    assert plugin._edit_service.kwargs["data_urls"] == [
+        "data:image/png;base64,Zmlyc3Q=",
+        "data:image/webp;base64,c2Vjb25k",
+    ]
+
+
 def test_admin_html_escapes_image_names_and_avoids_url_tokens():
     module = _load_module()
 
@@ -391,10 +477,32 @@ def test_admin_html_preview_actions_match_requested_gallery_flow():
 def test_admin_html_supports_paste_reference_image_preview():
     module = _load_module()
 
-    assert "pasteImagePreview" in module.ADMIN_HTML
+    assert "referenceThumbs" in module.ADMIN_HTML
     assert "handlePasteImage" in module.ADMIN_HTML
     assert "clipboardData.items" in module.ADMIN_HTML
-    assert "referenceImageFile" in module.ADMIN_HTML
+    assert "referenceImageFiles" in module.ADMIN_HTML
+
+
+def test_admin_html_places_workspace_result_above_action_panel():
+    module = _load_module()
+
+    assert "class=\"workflow-layout\"" in module.ADMIN_HTML
+    assert "class=\"workspace-result-panel\"" in module.ADMIN_HTML
+    assert "class=\"action-panel\"" in module.ADMIN_HTML
+    assert 'id="generateForm" class="action-panel action-panel-single"' in module.ADMIN_HTML
+    assert "id=\"generateResultBox\"" in module.ADMIN_HTML
+    assert "id=\"editResultBox\"" in module.ADMIN_HTML
+    assert "生成的图片会显示在这里" in module.ADMIN_HTML
+
+
+def test_admin_html_supports_multiple_reference_thumbnails_on_edit_page():
+    module = _load_module()
+
+    assert "multiple" in module.ADMIN_HTML
+    assert "id=\"referenceThumbs\"" in module.ADMIN_HTML
+    assert "class=\"reference-thumbs\"" in module.ADMIN_HTML
+    assert "renderReferenceThumbnails" in module.ADMIN_HTML
+    assert "body.append(\"image\", file);" in module.ADMIN_HTML
 
 
 def test_admin_html_uses_browser_local_image_cache_and_settings():
@@ -560,7 +668,10 @@ async def test_create_edit_job_uses_plugin_edit_service(tmp_path: Path):
     job = module.create_edit_job(
         plugin=plugin,
         prompt="改成水彩风格",
-        data_url="data:image/png;base64,aGVsbG8=",
+        data_urls=[
+            "data:image/png;base64,aGVsbG8=",
+            "data:image/png;base64,d29ybGQ=",
+        ],
         size="auto",
         quality="medium",
         moderation="low",
@@ -571,7 +682,10 @@ async def test_create_edit_job_uses_plugin_edit_service(tmp_path: Path):
     assert plugin._edit_service.kwargs == {
         "model": "gpt-image-test",
         "prompt": "改成水彩风格",
-        "data_url": "data:image/png;base64,aGVsbG8=",
+        "data_urls": [
+            "data:image/png;base64,aGVsbG8=",
+            "data:image/png;base64,d29ybGQ=",
+        ],
         "negative_prompt": "低清晰度",
         "endpoint_type": "responses",
         "size": "auto",
