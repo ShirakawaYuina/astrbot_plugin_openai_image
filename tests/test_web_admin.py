@@ -331,11 +331,13 @@ def test_admin_html_uses_browser_local_image_cache_and_settings():
     assert "id=\"localCacheDirectory\"" in module.ADMIN_HTML
     assert "readonly" in module.ADMIN_HTML
     assert "id=\"selectCacheDirectoryBtn\"" in module.ADMIN_HTML
-    assert "id=\"cacheDirectoryPicker\"" in module.ADMIN_HTML
-    assert "webkitdirectory" in module.ADMIN_HTML
     assert "showDirectoryPicker" in module.ADMIN_HTML
     assert "function chooseCacheDirectory" in module.ADMIN_HTML
     assert 'localCacheDirectory").addEventListener("click"' in module.ADMIN_HTML
+    assert "id=\"cacheDirectoryPicker\"" not in module.ADMIN_HTML
+    assert "webkitdirectory" not in module.ADMIN_HTML
+    assert "handleFallbackDirectoryPick" not in module.ADMIN_HTML
+    assert "不支持选择可写文件夹" in module.ADMIN_HTML
     assert "id=\"cacheInfo\"" in module.ADMIN_HTML
     assert "id=\"clearLocalCacheBtn\"" in module.ADMIN_HTML
     assert "保存缓存设置" not in module.ADMIN_HTML

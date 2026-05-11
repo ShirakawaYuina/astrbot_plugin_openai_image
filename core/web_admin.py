@@ -1195,7 +1195,6 @@ ADMIN_HTML = r"""<!doctype html>
             <div class="settings-actions" style="margin-bottom:10px;">
               <input id="localCacheDirectory" class="control" type="text" readonly placeholder="未选择文件夹" style="width:100%;">
               <button id="selectCacheDirectoryBtn" class="btn primary" type="button">选择文件夹</button>
-              <input id="cacheDirectoryPicker" class="hidden" type="file" webkitdirectory directory multiple>
             </div>
             <p class="muted" style="margin:0;">点击按钮后选择一个文件夹作为缓存目录；浏览器会优先把图片缓存在本地存储中。</p>
           </div>
@@ -1436,26 +1435,18 @@ ADMIN_HTML = r"""<!doctype html>
     }
 
     async function chooseCacheDirectory() {
-      if ("showDirectoryPicker" in window) {
-        try {
-          const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-          updateCacheDirectory(directoryHandle.name, directoryHandle);
-          showToast("缓存目录已选择");
-          return;
-        } catch (error) {
-          if (error && error.name === "AbortError") return;
-        }
+      if (!("showDirectoryPicker" in window)) {
+        showToast("当前浏览器或访问方式不支持选择可写文件夹，已继续使用浏览器本地缓存");
+        return;
       }
-      $("cacheDirectoryPicker").click();
-    }
-
-    function handleFallbackDirectoryPick() {
-      const files = $("cacheDirectoryPicker").files;
-      if (!files || !files.length) return;
-      const relativePath = files[0].webkitRelativePath || "";
-      const directoryName = relativePath.split("/")[0] || "浏览器本地图片缓存";
-      updateCacheDirectory(directoryName);
-      showToast("缓存目录已选择");
+      try {
+        const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+        updateCacheDirectory(directoryHandle.name, directoryHandle);
+        showToast("缓存目录已选择");
+      } catch (error) {
+        if (error && error.name === "AbortError") return;
+        showToast("缓存目录选择失败，请确认浏览器已授权文件夹写入");
+      }
     }
 
     function resolveSizeValue(presetId, customId) {
@@ -1644,7 +1635,6 @@ ADMIN_HTML = r"""<!doctype html>
     $("pasteImageZone").addEventListener("paste", handlePasteImage);
     $("localCacheDirectory").addEventListener("click", () => chooseCacheDirectory().catch((error) => showToast(error.message)));
     $("selectCacheDirectoryBtn").addEventListener("click", () => chooseCacheDirectory().catch((error) => showToast(error.message)));
-    $("cacheDirectoryPicker").addEventListener("change", handleFallbackDirectoryPick);
     $("clearLocalCacheBtn").addEventListener("click", async () => {
       await clearLocalImageCache();
       showToast("本地图片缓存已清空");
