@@ -1071,8 +1071,10 @@ ADMIN_HTML = r"""<!doctype html>
       cursor: zoom-in;
     }
     .preview-box img {
-      width: 100%;
-      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
       object-fit: contain;
       display: block;
     }
@@ -1392,7 +1394,7 @@ ADMIN_HTML = r"""<!doctype html>
       <div class="preview-head">
         <h2>预览</h2>
         <div class="settings-actions">
-          <button id="copyImageBtn" class="btn" type="button" disabled>复制图片</button>
+          <button id="viewOriginalBtn" class="btn" type="button" disabled>查看原图</button>
           <button id="deleteImageBtn" class="btn danger" type="button" disabled>删除</button>
         </div>
       </div>
@@ -1765,7 +1767,7 @@ ADMIN_HTML = r"""<!doctype html>
       $("detailType").textContent = "-";
       $("detailSize").textContent = "-";
       $("detailTime").textContent = "-";
-      $("copyImageBtn").disabled = true;
+      $("viewOriginalBtn").disabled = true;
       $("deleteImageBtn").disabled = true;
     }
 
@@ -1781,7 +1783,7 @@ ADMIN_HTML = r"""<!doctype html>
       $("detailType").textContent = image.mime_type;
       $("detailSize").textContent = formatBytes(image.size_bytes);
       $("detailTime").textContent = new Date(image.modified_at * 1000).toLocaleString();
-      $("copyImageBtn").disabled = false;
+      $("viewOriginalBtn").disabled = false;
       $("deleteImageBtn").disabled = false;
       updateGallerySelection();
       $("previewBox").innerHTML = `<img src="${escapeAttribute(imageUrl(image))}" alt="${escapeAttribute(image.name)}">`;
@@ -1867,16 +1869,13 @@ ADMIN_HTML = r"""<!doctype html>
       if (addedCount > 1) showToast(`已添加 ${addedCount} 张参考图片`);
     }
 
-    async function copySelectedImage() {
+    async function openSelectedOriginalImage() {
       if (!state.selected) return;
       try {
-        const response = await fetch(imageUrl(state.selected));
-        const blob = await response.blob();
-        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        refreshCacheInfo();
-        showToast("图片已复制到剪贴板");
+        const originalUrl = await getCachedOriginalUrl(state.selected);
+        window.open(originalUrl, "_blank", "noopener");
       } catch (error) {
-        showToast("复制失败，请双击预览图打开原图后手动复制");
+        window.open(imageUrl(state.selected), "_blank", "noopener");
       }
     }
 
@@ -1939,16 +1938,8 @@ ADMIN_HTML = r"""<!doctype html>
         showPanel(button.dataset.panel);
       });
     });
-    $("previewBox").addEventListener("dblclick", async () => {
-      if (!state.selected) return;
-      try {
-        const originalUrl = await getCachedOriginalUrl(state.selected);
-        window.open(originalUrl, "_blank", "noopener");
-      } catch (error) {
-        window.open(imageUrl(state.selected), "_blank", "noopener");
-      }
-    });
-    $("copyImageBtn").addEventListener("click", copySelectedImage);
+    $("previewBox").addEventListener("dblclick", openSelectedOriginalImage);
+    $("viewOriginalBtn").addEventListener("click", openSelectedOriginalImage);
     $("deleteImageBtn").addEventListener("click", () => deleteSelectedImage().catch((error) => showToast(error.message)));
 
     $("generateForm").addEventListener("submit", async (event) => {

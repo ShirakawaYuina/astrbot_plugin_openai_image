@@ -463,9 +463,13 @@ def test_admin_html_uses_separate_generate_edit_pages_and_size_presets():
 def test_admin_html_preview_actions_match_requested_gallery_flow():
     module = _load_module()
 
-    assert "id=\"copyImageBtn\"" in module.ADMIN_HTML
+    assert "id=\"viewOriginalBtn\"" in module.ADMIN_HTML
+    assert ">查看原图<" in module.ADMIN_HTML
     assert "addEventListener(\"dblclick\"" in module.ADMIN_HTML
-    assert "copySelectedImage" in module.ADMIN_HTML
+    assert "openSelectedOriginalImage" in module.ADMIN_HTML
+    assert "copySelectedImage" not in module.ADMIN_HTML
+    assert "ClipboardItem" not in module.ADMIN_HTML
+    assert "复制图片" not in module.ADMIN_HTML
     assert "id=\"deleteImageBtn\"" in module.ADMIN_HTML
     assert "deleteSelectedImage" in module.ADMIN_HTML
     assert 'method: "DELETE"' in module.ADMIN_HTML
@@ -594,11 +598,11 @@ def test_admin_html_centers_preview_image_and_shows_prompt_size_metadata():
     assert "place-items: center;" in module.ADMIN_HTML
     assert preview_image_rule is not None
     rule_body = preview_image_rule.group("body")
-    assert "width: 100%;" in rule_body
-    assert "height: 100%;" in rule_body
+    assert "max-width: 100%;" in rule_body
+    assert "max-height: 100%;" in rule_body
+    assert "width: auto;" in rule_body
+    assert "height: auto;" in rule_body
     assert "object-fit: contain;" in rule_body
-    assert "max-width: 100%;" not in rule_body
-    assert "max-height: 100%;" not in rule_body
     assert "id=\"detailPrompt\"" in module.ADMIN_HTML
     assert "id=\"detailGenerationSize\"" in module.ADMIN_HTML
     assert "formatGenerationSize(image)" in module.ADMIN_HTML
