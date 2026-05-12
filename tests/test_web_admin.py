@@ -657,8 +657,24 @@ def test_admin_html_centers_preview_image_and_shows_prompt_size_metadata():
     assert "object-fit: contain;" in rule_body
     assert "id=\"detailPrompt\"" in module.ADMIN_HTML
     assert "id=\"detailGenerationSize\"" in module.ADMIN_HTML
-    assert "formatGenerationSize(image)" in module.ADMIN_HTML
+    assert "<span>图片尺寸</span>" in module.ADMIN_HTML
+    assert "function formatImageDimensions(width, height)" in module.ADMIN_HTML
+    assert "function updatePreviewImageDimensions(image, previewImage)" in module.ADMIN_HTML
+    assert "previewImage.naturalWidth" in module.ADMIN_HTML
+    assert "previewImage.naturalHeight" in module.ADMIN_HTML
     assert "formatPrompt(image.prompt)" in module.ADMIN_HTML
+
+
+def test_admin_html_uses_custom_reference_upload_button():
+    module = _load_module()
+
+    assert "class=\"reference-head\"" in module.ADMIN_HTML
+    assert "class=\"reference-file-input\"" in module.ADMIN_HTML
+    assert "class=\"reference-upload-btn\"" in module.ADMIN_HTML
+    assert "上传图片" in module.ADMIN_HTML
+    assert ".reference-file-input:focus-visible + .reference-upload-btn" in module.ADMIN_HTML
+    assert ".reference-upload-btn:hover" in module.ADMIN_HTML
+    assert "未选择任何文件" not in module.ADMIN_HTML
 
 
 def test_admin_html_preview_sidebar_disables_horizontal_scrolling():
@@ -681,7 +697,9 @@ def test_admin_html_caches_thumbnails_before_original_images():
     assert "kind: \"original\"" in module.ADMIN_HTML
     assert "thumb.src = await getCachedThumbnailUrl(image);" in module.ADMIN_HTML
     assert "const originalUrl = await getCachedOriginalUrl(state.selected);" in module.ADMIN_HTML
-    assert "previewBox\").innerHTML = `<img src=\"${escapeAttribute(imageUrl(image))}\"" in module.ADMIN_HTML
+    assert "const previewImage = document.createElement(\"img\");" in module.ADMIN_HTML
+    assert "previewImage.src = imageUrl(image);" in module.ADMIN_HTML
+    assert "previewBox.replaceChildren(previewImage);" in module.ADMIN_HTML
     assert "const cached = await readCachedImage(originalCacheKey(state.selected));" not in module.ADMIN_HTML
     assert "key: originalCacheKey(state.selected)" not in module.ADMIN_HTML
     assert "const cachedUrl = await getCachedOriginalUrl(image);" not in module.ADMIN_HTML

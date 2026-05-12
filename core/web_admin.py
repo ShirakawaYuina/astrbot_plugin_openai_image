@@ -1090,6 +1090,61 @@ ADMIN_HTML = r"""<!doctype html>
       gap: 12px;
       align-content: start;
     }
+    .reference-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+    .reference-head span {
+      font-weight: 700;
+      color: var(--text);
+    }
+    .reference-file-input {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .reference-upload-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid rgba(65, 116, 201, 0.26);
+      border-radius: 10px;
+      background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
+      color: #1f4f9f;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      box-shadow: 0 10px 22px rgba(53, 101, 181, 0.12);
+      transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .reference-upload-btn:hover {
+      border-color: rgba(40, 96, 190, 0.45);
+      background: #eef5ff;
+      color: #153f83;
+      box-shadow: 0 12px 26px rgba(53, 101, 181, 0.18);
+    }
+    .reference-file-input:focus-visible + .reference-upload-btn {
+      outline: 3px solid rgba(43, 108, 246, 0.22);
+      outline-offset: 2px;
+    }
+    .reference-upload-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke-width: 2.1;
+    }
     .reference-thumbs {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1450,8 +1505,14 @@ ADMIN_HTML = r"""<!doctype html>
               </div>
             </div>
             <div id="referencePanel" class="reference-panel">
-              <label for="editImage">参考图片</label>
-              <input id="editImage" class="control" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+              <div class="reference-head">
+                <span>参考图片</span>
+                <input id="editImage" class="reference-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+                <label class="reference-upload-btn" for="editImage" title="上传参考图片">
+                  <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M20 16.5V19a2 2 0 01-2 2H6a2 2 0 01-2-2v-2.5"/></svg>
+                  上传图片
+                </label>
+              </div>
               <div id="referenceThumbs" class="reference-thumbs"></div>
             </div>
           </form>
@@ -1489,7 +1550,7 @@ ADMIN_HTML = r"""<!doctype html>
       <div id="previewBox" class="preview-box empty-preview" title="双击查看原图">请选择一张图片</div>
       <h3 id="detailTitle" class="detail-title">暂无选中图片</h3>
       <div class="detail-row detail-row-block"><span>提示词</span><strong id="detailPrompt">-</strong></div>
-      <div class="detail-row"><span>生成尺寸</span><strong id="detailGenerationSize">-</strong></div>
+      <div class="detail-row"><span>图片尺寸</span><strong id="detailGenerationSize">-</strong></div>
       <div class="detail-row"><span>格式</span><strong id="detailType">-</strong></div>
       <div class="detail-row"><span>大小</span><strong id="detailSize">-</strong></div>
       <div class="detail-row"><span>更新时间</span><strong id="detailTime">-</strong></div>
@@ -1775,8 +1836,15 @@ ADMIN_HTML = r"""<!doctype html>
       return String(value || "").trim() || "未记录";
     }
 
-    function formatGenerationSize(image) {
-      return String((image && image.generation_size) || "").trim() || "未记录";
+    function formatImageDimensions(width, height) {
+      if (!width || !height) return "未记录";
+      return `${width}×${height}`;
+    }
+
+    function updatePreviewImageDimensions(image, previewImage) {
+      // 预览区需要展示图片文件真实像素尺寸，而不是接口请求里的 auto/square 等生成参数。
+      if (!image || state.selected?.name !== image.name) return;
+      $("detailGenerationSize").textContent = formatImageDimensions(previewImage.naturalWidth, previewImage.naturalHeight);
     }
 
     function filteredImages() {
@@ -1868,18 +1936,26 @@ ADMIN_HTML = r"""<!doctype html>
       const image = state.images.find((item) => item.name === name);
       if (!image) return;
       state.selected = image;
-      $("previewBox").classList.remove("empty-preview");
-      $("previewBox").textContent = "图片加载中...";
+      const previewBox = $("previewBox");
+      previewBox.classList.remove("empty-preview");
+      previewBox.textContent = "图片加载中...";
       $("detailTitle").textContent = image.name;
       $("detailPrompt").textContent = formatPrompt(image.prompt);
-      $("detailGenerationSize").textContent = formatGenerationSize(image);
+      $("detailGenerationSize").textContent = "读取中...";
       $("detailType").textContent = image.mime_type;
       $("detailSize").textContent = formatBytes(image.size_bytes);
       $("detailTime").textContent = new Date(image.modified_at * 1000).toLocaleString();
       $("viewOriginalBtn").disabled = false;
       $("deleteImageBtn").disabled = false;
       updateGallerySelection();
-      $("previewBox").innerHTML = `<img src="${escapeAttribute(imageUrl(image))}" alt="${escapeAttribute(image.name)}">`;
+      const previewImage = document.createElement("img");
+      previewImage.alt = image.name;
+      previewImage.addEventListener("load", () => updatePreviewImageDimensions(image, previewImage), { once: true });
+      previewImage.addEventListener("error", () => {
+        if (state.selected?.name === image.name) $("detailGenerationSize").textContent = "未记录";
+      }, { once: true });
+      previewImage.src = imageUrl(image);
+      previewBox.replaceChildren(previewImage);
     }
 
     function setResultState(targetId, stateName, message = "") {
