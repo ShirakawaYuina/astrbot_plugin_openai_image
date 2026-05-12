@@ -1025,6 +1025,7 @@ ADMIN_HTML = r"""<!doctype html>
       display: grid;
       grid-template-columns: minmax(280px, 1fr) 300px;
       align-self: end;
+      align-items: start;
       gap: 14px;
       padding: 14px;
       border: 1px solid var(--line);
@@ -1036,6 +1037,7 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .control-stack {
       display: grid;
+      align-content: start;
       gap: 12px;
     }
     .prompt-action-row {
@@ -1094,6 +1096,7 @@ ADMIN_HTML = r"""<!doctype html>
       gap: 10px;
     }
     .reference-thumb {
+      position: relative;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -1105,6 +1108,22 @@ ADMIN_HTML = r"""<!doctype html>
       height: 100%;
       object-fit: contain;
       display: block;
+    }
+    .reference-thumb-remove {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(23, 32, 51, 0.72);
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(24, 32, 51, 0.18);
+    }
+    .reference-thumb-remove:hover {
+      background: var(--danger);
     }
     .preview {
       padding: 22px;
@@ -1419,7 +1438,7 @@ ADMIN_HTML = r"""<!doctype html>
                   编辑图片
                 </button>
                 <div class="prompt-field">
-                  <label for="editPrompt">编辑提示词</label>
+                  <label for="editPrompt">提示词</label>
                   <textarea id="editPrompt" placeholder="例如：保留主体构图，改成柔和水彩风格，背景更明亮。"></textarea>
                 </div>
               </div>
@@ -1934,9 +1953,25 @@ ADMIN_HTML = r"""<!doctype html>
         return `
           <div class="reference-thumb">
             <img src="${escapeAttribute(previewUrl)}" alt="参考图片 ${index + 1}">
+            <button class="reference-thumb-remove" type="button" data-index="${index}" title="移除参考图片 ${index + 1}" aria-label="移除参考图片 ${index + 1}">
+              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+            </button>
           </div>
         `;
       }).join("");
+      $("referenceThumbs").querySelectorAll(".reference-thumb-remove").forEach((button) => {
+        button.addEventListener("click", () => removeReferenceImageFile(Number(button.dataset.index)));
+      });
+    }
+
+    function removeReferenceImageFile(index) {
+      const file = state.referenceImageFiles[index];
+      if (!file) return;
+      const previewUrl = REFERENCE_IMAGE_PREVIEW_URLS.get(file);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      REFERENCE_IMAGE_PREVIEW_URLS.delete(file);
+      state.referenceImageFiles.splice(index, 1);
+      renderReferenceThumbnails();
     }
 
     function addReferenceImageFile(file) {

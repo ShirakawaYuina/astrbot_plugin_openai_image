@@ -568,10 +568,22 @@ def test_admin_html_supports_multiple_reference_thumbnails_on_edit_page():
     assert "id=\"referenceThumbs\"" in module.ADMIN_HTML
     assert "class=\"reference-thumbs\"" in module.ADMIN_HTML
     assert "renderReferenceThumbnails" in module.ADMIN_HTML
+    assert "reference-thumb-remove" in module.ADMIN_HTML
+    assert "function removeReferenceImageFile" in module.ADMIN_HTML
+    assert "URL.revokeObjectURL(previewUrl);" in module.ADMIN_HTML
     assert "body.append(\"image\", file);" in module.ADMIN_HTML
     assert 'body.append("moderation", $("editModeration").value);' in module.ADMIN_HTML
     assert 'const count = Math.max(1, Math.min(4, Number($("editCount").value || 1)));' in module.ADMIN_HTML
     assert 'renderResultImages("editResultBox", resultImages);' in module.ADMIN_HTML
+
+
+def test_admin_html_edit_panel_keeps_prompt_controls_top_aligned():
+    module = _load_module()
+
+    assert "align-items: start;" in module.ADMIN_HTML
+    assert "align-content: start;" in module.ADMIN_HTML
+    assert "<label for=\"editPrompt\">提示词</label>" in module.ADMIN_HTML
+    assert "编辑提示词" not in module.ADMIN_HTML
 
 
 def test_admin_html_uses_browser_local_image_cache_and_settings():
