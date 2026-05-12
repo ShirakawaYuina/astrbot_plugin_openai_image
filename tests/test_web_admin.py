@@ -491,6 +491,8 @@ def test_admin_html_gallery_uses_responsive_masonry_without_cropping_images():
     image_card_body = image_card_rule.group("body")
     thumb_body = thumb_rule.group("body")
     assert "column-width: 220px;" in gallery_body
+    assert ".gallery.fixed-columns" in module.ADMIN_HTML
+    assert "column-count: var(--gallery-column-count, 4);" in module.ADMIN_HTML
     assert "column-gap: 14px;" in gallery_body
     assert "gallery-empty" in module.ADMIN_HTML
     assert "display: inline-block;" in image_card_body
@@ -525,6 +527,28 @@ def test_admin_html_gallery_supports_pagination_and_page_size_setting():
     assert 'addEventListener("input", resetGalleryPageAndRender)' in module.ADMIN_HTML
     assert 'addEventListener("change", resetGalleryPageAndRender)' in module.ADMIN_HTML
     assert "hydrateGalleryImages(pageImages);" in module.ADMIN_HTML
+
+
+def test_admin_html_gallery_supports_custom_column_count_setting():
+    module = _load_module()
+
+    assert "id=\"galleryColumnMode\"" in module.ADMIN_HTML
+    assert "id=\"galleryColumnCountInput\"" in module.ADMIN_HTML
+    assert "id=\"saveGalleryColumnCountBtn\"" in module.ADMIN_HTML
+    assert "自动列数" in module.ADMIN_HTML
+    assert "固定列数" in module.ADMIN_HTML
+    assert "const GALLERY_COLUMN_MODE_KEY" in module.ADMIN_HTML
+    assert "const GALLERY_COLUMN_COUNT_KEY" in module.ADMIN_HTML
+    assert "const MIN_GALLERY_COLUMN_COUNT = 2;" in module.ADMIN_HTML
+    assert "const MAX_GALLERY_COLUMN_COUNT = 8;" in module.ADMIN_HTML
+    assert "function clampGalleryColumnCount(value)" in module.ADMIN_HTML
+    assert "function applyGalleryColumnSetting()" in module.ADMIN_HTML
+    assert 'gallery.classList.toggle("fixed-columns", useFixedColumns);' in module.ADMIN_HTML
+    assert 'gallery.style.setProperty("--gallery-column-count", String(state.galleryColumnCount));' in module.ADMIN_HTML
+    assert "function saveGalleryColumnSetting()" in module.ADMIN_HTML
+    assert "function syncGalleryColumnCountInput()" in module.ADMIN_HTML
+    assert "loadGalleryColumnSetting();" in module.ADMIN_HTML
+    assert "saveGalleryColumnSetting" in module.ADMIN_HTML
 
 
 def test_admin_html_selects_gallery_image_without_rerendering_gallery():

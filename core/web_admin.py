@@ -833,6 +833,10 @@ ADMIN_HTML = r"""<!doctype html>
       column-gap: 14px;
       min-height: 300px;
     }
+    .gallery.fixed-columns {
+      column-width: auto;
+      column-count: var(--gallery-column-count, 4);
+    }
     .gallery-empty {
       width: 100%;
       box-sizing: border-box;
@@ -1578,6 +1582,18 @@ ADMIN_HTML = r"""<!doctype html>
             </div>
             <p class="muted">用于控制当前浏览器历史图库分页数量，范围 5-200。</p>
           </div>
+          <div class="settings-card">
+            <label for="galleryColumnCountInput">历史图库显示列数</label>
+            <div class="settings-inline">
+              <select id="galleryColumnMode" class="control" aria-label="历史图库列数模式">
+                <option value="auto">自动列数</option>
+                <option value="fixed">固定列数</option>
+              </select>
+              <input id="galleryColumnCountInput" class="control" type="number" min="2" max="8" step="1">
+              <button id="saveGalleryColumnCountBtn" class="btn" type="button">保存列数</button>
+            </div>
+            <p class="muted">自动列数会按窗口宽度自适应；固定列数范围 2-8。</p>
+          </div>
           <div id="cacheInfo" class="cache-info">
             <div class="detail-row"><span>缩略图缓存</span><strong id="thumbnailCacheInfo">0 张 / 0 B</strong></div>
             <div class="detail-row"><span>原图缓存</span><strong id="originalCacheInfo">0 张 / 0 B</strong></div>
@@ -1612,9 +1628,14 @@ ADMIN_HTML = r"""<!doctype html>
 
   <script>
     const GALLERY_PAGE_SIZE_KEY = "openaiImageAdminGalleryPageSize";
+    const GALLERY_COLUMN_MODE_KEY = "openaiImageAdminGalleryColumnMode";
+    const GALLERY_COLUMN_COUNT_KEY = "openaiImageAdminGalleryColumnCount";
     const DEFAULT_GALLERY_PAGE_SIZE = 30;
     const MIN_GALLERY_PAGE_SIZE = 5;
     const MAX_GALLERY_PAGE_SIZE = 200;
+    const DEFAULT_GALLERY_COLUMN_COUNT = 4;
+    const MIN_GALLERY_COLUMN_COUNT = 2;
+    const MAX_GALLERY_COLUMN_COUNT = 8;
     const state = {
       token: localStorage.getItem("openaiImageAdminToken") || "",
       images: [],
@@ -1624,6 +1645,8 @@ ADMIN_HTML = r"""<!doctype html>
       imageCacheDb: null,
       galleryPage: 1,
       galleryPageSize: DEFAULT_GALLERY_PAGE_SIZE,
+      galleryColumnMode: "auto",
+      galleryColumnCount: DEFAULT_GALLERY_COLUMN_COUNT,
     };
     const $ = (id) => document.getElementById(id);
     const IMAGE_CACHE_DB_NAME = "openai-image-admin-cache";
@@ -1904,9 +1927,33 @@ ADMIN_HTML = r"""<!doctype html>
       return Math.max(MIN_GALLERY_PAGE_SIZE, Math.min(MAX_GALLERY_PAGE_SIZE, Math.floor(numericValue)));
     }
 
+    function clampGalleryColumnCount(value) {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) return DEFAULT_GALLERY_COLUMN_COUNT;
+      return Math.max(MIN_GALLERY_COLUMN_COUNT, Math.min(MAX_GALLERY_COLUMN_COUNT, Math.floor(numericValue)));
+    }
+
+    function applyGalleryColumnSetting() {
+      const gallery = $("gallery");
+      const useFixedColumns = state.galleryColumnMode === "fixed";
+      // 固定列数只影响当前浏览器的展示密度；自动模式继续使用 CSS column-width 自适应。
+      gallery.classList.toggle("fixed-columns", useFixedColumns);
+      gallery.style.setProperty("--gallery-column-count", String(state.galleryColumnCount));
+    }
+
     function loadGalleryPageSizeSetting() {
       state.galleryPageSize = clampGalleryPageSize(localStorage.getItem(GALLERY_PAGE_SIZE_KEY));
       $("galleryPageSizeInput").value = String(state.galleryPageSize);
+    }
+
+    function loadGalleryColumnSetting() {
+      const storedMode = localStorage.getItem(GALLERY_COLUMN_MODE_KEY);
+      state.galleryColumnMode = storedMode === "fixed" ? "fixed" : "auto";
+      state.galleryColumnCount = clampGalleryColumnCount(localStorage.getItem(GALLERY_COLUMN_COUNT_KEY));
+      $("galleryColumnMode").value = state.galleryColumnMode;
+      $("galleryColumnCountInput").value = String(state.galleryColumnCount);
+      syncGalleryColumnCountInput();
+      applyGalleryColumnSetting();
     }
 
     function saveGalleryPageSizeSetting() {
@@ -1917,6 +1964,23 @@ ADMIN_HTML = r"""<!doctype html>
       state.galleryPage = 1;
       renderGallery();
       showToast("每页显示数量已保存");
+    }
+
+    function saveGalleryColumnSetting() {
+      state.galleryColumnMode = $("galleryColumnMode").value === "fixed" ? "fixed" : "auto";
+      state.galleryColumnCount = clampGalleryColumnCount($("galleryColumnCountInput").value);
+      localStorage.setItem(GALLERY_COLUMN_MODE_KEY, state.galleryColumnMode);
+      localStorage.setItem(GALLERY_COLUMN_COUNT_KEY, String(state.galleryColumnCount));
+      $("galleryColumnMode").value = state.galleryColumnMode;
+      $("galleryColumnCountInput").value = String(state.galleryColumnCount);
+      syncGalleryColumnCountInput();
+      applyGalleryColumnSetting();
+      renderGallery();
+      showToast("历史图库列数已保存");
+    }
+
+    function syncGalleryColumnCountInput() {
+      $("galleryColumnCountInput").disabled = $("galleryColumnMode").value !== "fixed";
     }
 
     function updatePreviewImageDimensions(image, previewImage) {
@@ -2227,6 +2291,7 @@ ADMIN_HTML = r"""<!doctype html>
         localStorage.setItem("openaiImageAdminToken", state.token);
         $("loginMask").classList.add("hidden");
         loadGalleryPageSizeSetting();
+        loadGalleryColumnSetting();
         await loadImages();
       } catch (error) {
         showToast(error.message);
@@ -2246,6 +2311,8 @@ ADMIN_HTML = r"""<!doctype html>
       renderGallery();
     });
     $("saveGalleryPageSizeBtn").addEventListener("click", saveGalleryPageSizeSetting);
+    $("galleryColumnMode").addEventListener("change", syncGalleryColumnCountInput);
+    $("saveGalleryColumnCountBtn").addEventListener("click", saveGalleryColumnSetting);
     $("generateSizePreset").addEventListener("change", () => syncCustomSize("generateSizePreset", "generateCustomSize"));
     $("editSizePreset").addEventListener("change", () => syncCustomSize("editSizePreset", "editCustomSize"));
     $("editImage").addEventListener("change", () => {
@@ -2342,9 +2409,11 @@ ADMIN_HTML = r"""<!doctype html>
     if (state.token) {
       $("loginMask").classList.add("hidden");
       loadGalleryPageSizeSetting();
+      loadGalleryColumnSetting();
       loadImages().catch(() => $("loginMask").classList.remove("hidden"));
     } else {
       loadGalleryPageSizeSetting();
+      loadGalleryColumnSetting();
     }
   </script>
 </body>
