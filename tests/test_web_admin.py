@@ -618,6 +618,7 @@ def test_admin_html_hides_preview_sidebar_outside_gallery_page():
     assert "function updatePreviewVisibility" in module.ADMIN_HTML
     assert 'document.body.classList.toggle("preview-hidden", panelId !== "galleryPanel");' in module.ADMIN_HTML
     assert "body.preview-hidden .preview" in module.ADMIN_HTML
+    assert "body.preview-hidden .topbar" in module.ADMIN_HTML
     assert "body.preview-hidden .app-shell" in module.ADMIN_HTML
     assert "settings-active" not in module.ADMIN_HTML
 

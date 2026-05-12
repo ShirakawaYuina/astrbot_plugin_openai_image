@@ -643,6 +643,9 @@ ADMIN_HTML = r"""<!doctype html>
     body.preview-hidden .preview {
       display: none;
     }
+    body.preview-hidden .topbar {
+      display: none;
+    }
     .sidebar,
     .preview {
       position: sticky;
