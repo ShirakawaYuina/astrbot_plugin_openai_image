@@ -42,6 +42,8 @@ DEFAULT_RESPONSES_MODEL = "gpt-5.4-mini"
 DEFAULT_IMAGES_MODEL = "gpt-image-2"
 ENDPOINT_TYPE_IMAGES = "images"
 ENDPOINT_TYPE_RESPONSES = "responses"
+FIGURE_IMAGE_DIR_NAME = "figure"
+FIGURE_IMAGE_FILE_NAME = "robot_figure.png"
 
 
 @register(
@@ -142,6 +144,17 @@ class OpenAIImagePlugin(Star):
         event.should_call_llm(True)
         await self._handle_qlogo_command(event, raw_prompt=prompt)
 
+    @filter.command("oaifigure")
+    async def figure_image_command(
+        self,
+        event: AstrMessageEvent,
+        _prompt: str = "",
+    ) -> None:
+        """设置或更新机器人形象参考图。"""
+
+        event.should_call_llm(True)
+        await self._handle_figure_command(event)
+
     @filter.llm_tool(name="openai_generate_image")
     async def openai_generate_image_tool(
         self,
@@ -191,6 +204,46 @@ class OpenAIImagePlugin(Star):
             prompt=str(prompt or "").strip(),
             count=count,
             size=None,
+            send_user_message=False,
+        )
+        return str(result["summary"])
+
+    @filter.llm_tool(name="openai_edit_robot_figure_image")
+    async def openai_edit_robot_figure_image_tool(
+        self,
+        event: AstrMessageEvent,
+        prompt: str,
+        count: int = 1,
+        size: str | None = None,
+        quality: str = "auto",
+        moderation: str = "low",
+    ) -> str:
+        """供 LLM 调用的机器人形象图编辑工具。
+
+        当用户要求生成或编辑机器人自己、Bot 形象、助手形象、看板娘、
+        机器人头像、机器人立绘、机器人表情包等与机器人有关的图像时调用。
+
+        Args:
+            prompt(string): 基于机器人形象参考图进行编辑的提示词。
+            count(number): 生成图片数量，默认 1。
+            size(string): 可选输出尺寸，例如 auto、1024x1024、portrait。
+            quality(string): 可选质量，auto、low、medium、high。
+            moderation(string): 可选审核级别，low 或 auto。
+        """
+
+        figure_path = self._get_figure_image_path()
+        if not figure_path.is_file():
+            return (
+                "尚未设置机器人形象图，请先回复或发送一张图片并使用 /oaifigure 设置。"
+            )
+
+        result = await self._execute_figure_edit_flow(
+            event=event,
+            prompt=str(prompt or "").strip(),
+            count=int(count),
+            size=size,
+            quality=quality,
+            moderation=moderation,
             send_user_message=False,
         )
         return str(result["summary"])
@@ -325,6 +378,32 @@ class OpenAIImagePlugin(Star):
             moderation=parsed_command.moderation,
             send_user_message=True,
         )
+
+    async def _handle_figure_command(self, event: AstrMessageEvent) -> None:
+        """处理 `/oaifigure` 命令，将消息中的图片保存为机器人形象图。"""
+
+        image_component = extract_first_image_component(event)
+        if image_component is None:
+            await event.send(
+                event.plain_result(
+                    "请在同条消息带图，或回复一张图片后再执行 /oaifigure 设置机器人形象图。"
+                )
+            )
+            return
+
+        try:
+            figure_path = await self._save_figure_image(image_component)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[OpenAIImage][figure] 机器人形象图保存失败 error=%s",
+                exc,
+                exc_info=True,
+            )
+            await event.send(event.plain_result(f"机器人形象图保存失败：{exc}"))
+            return
+
+        logger.info("[OpenAIImage][figure] 机器人形象图已更新 path=%s", figure_path)
+        await event.send(event.plain_result("机器人形象图已更新。"))
 
     async def _execute_generate_flow(
         self,
@@ -507,6 +586,75 @@ class OpenAIImagePlugin(Star):
             quality=quality,
             moderation=moderation,
             data_urls=[avatar_data_url],
+            event=event,
+            send_each_result=send_user_message,
+        )
+        return await self._finalize_results(
+            event=event,
+            task_id=task_id,
+            mode="edit",
+            task_results=task_results,
+            command_start=command_start,
+            send_user_message=send_user_message,
+            results_already_sent=send_user_message,
+        )
+
+    async def _execute_figure_edit_flow(
+        self,
+        event: AstrMessageEvent,
+        prompt: str,
+        count: int,
+        size: str | None = None,
+        quality: str = "auto",
+        moderation: str = "low",
+        *,
+        send_user_message: bool,
+    ) -> dict[str, Any]:
+        """使用已保存的机器人形象图作为输入图执行编辑流程。"""
+
+        task_id = self._new_task_id()
+        command_start = time.perf_counter()
+        self._ensure_ready()
+
+        figure_path = self._get_figure_image_path()
+        if not figure_path.is_file():
+            summary = (
+                "尚未设置机器人形象图，请先回复或发送一张图片并使用 /oaifigure 设置。"
+            )
+            if send_user_message:
+                await event.send(event.plain_result(summary))
+            return {"status": "failed", "summary": summary}
+
+        logger.info(
+            "[OpenAIImage][figure][task_id=%s] 收到请求 count=%s prompt=%s source=%s",
+            task_id,
+            count,
+            self._truncate_text(prompt),
+            "command" if send_user_message else "llm_tool",
+        )
+
+        try:
+            figure_data_url = self._build_local_image_data_url(figure_path)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[OpenAIImage][figure][task_id=%s] 机器人形象图读取失败 error=%s",
+                task_id,
+                exc,
+                exc_info=True,
+            )
+            summary = f"机器人形象图读取失败：{exc}"
+            if send_user_message:
+                await event.send(event.plain_result(summary))
+            return {"status": "failed", "summary": summary}
+
+        task_results = await self._run_edit_jobs(
+            task_id=task_id,
+            count=count,
+            prompt=prompt,
+            size=self._resolve_output_size(size),
+            quality=quality,
+            moderation=moderation,
+            data_urls=[figure_data_url],
             event=event,
             send_each_result=send_user_message,
         )
@@ -788,6 +936,47 @@ class OpenAIImagePlugin(Star):
         if not image_bytes:
             raise ValueError("头像响应内容为空")
 
+        base64_data = base64.b64encode(image_bytes).decode("utf-8")
+        return f"data:{mime_type};base64,{base64_data}"
+
+    async def _save_figure_image(self, image_component: Any) -> Path:
+        """将用户提供的图片保存为机器人形象图。"""
+
+        if hasattr(image_component, "convert_to_base64"):
+            base64_data = await image_component.convert_to_base64()
+            image_bytes = base64.b64decode(base64_data)
+        else:
+            image_path = Path(str(getattr(image_component, "path", ""))).expanduser()
+            if not image_path.exists():
+                raise ValueError("未找到形象图片文件")
+            image_bytes = image_path.read_bytes()
+
+        if not image_bytes:
+            raise ValueError("形象图片内容为空")
+
+        figure_path = self._get_figure_image_path()
+        figure_path.parent.mkdir(parents=True, exist_ok=True)
+        # 固定文件名便于 LLM 工具稳定读取最新形象图，更新时直接覆盖旧图。
+        figure_path.write_bytes(image_bytes)
+        return figure_path
+
+    def _get_figure_image_path(self) -> Path:
+        """返回机器人形象图在 data/plugin_data 下的固定保存路径。"""
+
+        return (
+            Path(get_astrbot_plugin_data_path())
+            / PLUGIN_NAME
+            / FIGURE_IMAGE_DIR_NAME
+            / FIGURE_IMAGE_FILE_NAME
+        )
+
+    def _build_local_image_data_url(self, image_path: Path) -> str:
+        """将本地图片文件转换为 data URL，供图片编辑接口使用。"""
+
+        image_bytes = image_path.read_bytes()
+        if not image_bytes:
+            raise ValueError("图片内容为空")
+        mime_type = mimetypes.guess_type(str(image_path))[0] or "image/png"
         base64_data = base64.b64encode(image_bytes).decode("utf-8")
         return f"data:{mime_type};base64,{base64_data}"
 

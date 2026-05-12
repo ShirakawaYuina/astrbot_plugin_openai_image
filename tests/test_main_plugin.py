@@ -387,6 +387,94 @@ async def test_edit_llm_tool_returns_error_when_no_image_found():
 
 
 @pytest.mark.asyncio
+async def test_figure_command_saves_reference_image_to_plugin_data(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    module.get_astrbot_plugin_data_path = lambda: str(tmp_path)
+    image_component = SimpleNamespace(
+        type="image",
+        convert_to_base64=AsyncMock(return_value="ZmFrZS1maWd1cmU="),
+    )
+    event = _make_event(message_components=[image_component])
+
+    await plugin._handle_figure_command(event)
+
+    figure_path = (
+        tmp_path
+        / module.PLUGIN_NAME
+        / module.FIGURE_IMAGE_DIR_NAME
+        / module.FIGURE_IMAGE_FILE_NAME
+    )
+    assert figure_path.read_bytes() == b"fake-figure"
+    event.send.assert_awaited_once()
+    assert "机器人形象图已更新" in event._sent_messages[0]
+
+
+@pytest.mark.asyncio
+async def test_figure_command_requires_image():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    event = _make_event()
+
+    await plugin._handle_figure_command(event)
+
+    event.send.assert_awaited_once()
+    assert "/oaifigure" in event._sent_messages[0]
+
+
+@pytest.mark.asyncio
+async def test_robot_figure_llm_tool_requires_saved_figure(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    module.get_astrbot_plugin_data_path = lambda: str(tmp_path)
+    event = _make_event()
+
+    result = await plugin.openai_edit_robot_figure_image_tool(
+        event,
+        prompt="画一张机器人头像",
+        count=1,
+    )
+
+    assert "尚未设置机器人形象图" in result
+
+
+@pytest.mark.asyncio
+async def test_execute_figure_edit_flow_uses_saved_figure_image(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    module.get_astrbot_plugin_data_path = lambda: str(tmp_path)
+    figure_path = plugin._get_figure_image_path()
+    figure_path.parent.mkdir(parents=True, exist_ok=True)
+    figure_path.write_bytes(b"fake-figure")
+    plugin._image_gateway = object()
+    plugin._generate_service = object()
+    plugin._edit_service = object()
+    plugin._task_service = object()
+    plugin._run_edit_jobs = AsyncMock(return_value=[])
+    plugin._finalize_results = AsyncMock(
+        return_value={
+            "status": "success",
+            "summary": "已编辑 0 张图片",
+        }
+    )
+    event = _make_event()
+
+    result = await plugin._execute_figure_edit_flow(
+        event=event,
+        prompt="生成机器人立绘",
+        count=1,
+        size="1024x1024",
+        send_user_message=False,
+    )
+
+    assert result["summary"] == "已编辑 0 张图片"
+    plugin._run_edit_jobs.assert_awaited_once()
+    data_urls = plugin._run_edit_jobs.await_args.kwargs["data_urls"]
+    assert data_urls == ["data:image/png;base64,ZmFrZS1maWd1cmU="]
+    assert plugin._run_edit_jobs.await_args.kwargs["size"] == "1024x1024"
+
+
+@pytest.mark.asyncio
 async def test_execute_edit_flow_no_longer_sends_pending_message_directly():
     module = _load_module()
     plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
@@ -780,6 +868,9 @@ def test_llm_tool_docstring_declares_args_for_prompt_and_options():
 
     generate_doc = module.OpenAIImagePlugin.openai_generate_image_tool.__doc__ or ""
     edit_doc = module.OpenAIImagePlugin.openai_edit_image_tool.__doc__ or ""
+    figure_doc = (
+        module.OpenAIImagePlugin.openai_edit_robot_figure_image_tool.__doc__ or ""
+    )
 
     assert "Args:" in generate_doc
     assert "prompt(string)" in generate_doc
@@ -791,6 +882,10 @@ def test_llm_tool_docstring_declares_args_for_prompt_and_options():
     assert "count(number)" in edit_doc
     assert "use_english_enhancement" not in edit_doc
 
+    assert "Args:" in figure_doc
+    assert "prompt(string)" in figure_doc
+    assert "机器人形象" in figure_doc
+
 
 def test_plugin_registers_command_and_tool_names():
     module = _load_module()
@@ -800,8 +895,10 @@ def test_plugin_registers_command_and_tool_names():
     assert '@filter.command("oaiimg")' in source
     assert '@filter.command("oaiedit")' in source
     assert '@filter.command("oaiqlogo")' in source
+    assert '@filter.command("oaifigure")' in source
     assert '@filter.llm_tool(name="openai_generate_image")' in source
     assert '@filter.llm_tool(name="openai_edit_image")' in source
+    assert '@filter.llm_tool(name="openai_edit_robot_figure_image")' in source
     assert '@filter.command("opimg")' not in source
     assert '@filter.command("opedit")' not in source
 
