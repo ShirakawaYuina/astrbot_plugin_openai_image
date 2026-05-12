@@ -222,6 +222,7 @@ class OpenAIImagePlugin(Star):
 
         当用户要求生成或编辑机器人自己、Bot 形象、助手形象、看板娘、
         机器人头像、机器人立绘、机器人表情包等与机器人有关的图像时调用。
+        工具成功后应以机器人本人看到新形象的自然反应回复，不要描述工具执行过程。
 
         Args:
             prompt(string): 基于机器人形象参考图进行编辑的提示词。
@@ -246,7 +247,7 @@ class OpenAIImagePlugin(Star):
             moderation=moderation,
             send_user_message=False,
         )
-        return str(result["summary"])
+        return self._build_robot_figure_tool_reply(result)
 
     @filter.regex(r"(?:[/!])oaiedit(?:\s+.+)?", priority=-10)
     async def edit_image_regex_fallback(self, event: AstrMessageEvent) -> Any:
@@ -979,6 +980,16 @@ class OpenAIImagePlugin(Star):
         mime_type = mimetypes.guess_type(str(image_path))[0] or "image/png"
         base64_data = base64.b64encode(image_bytes).decode("utf-8")
         return f"data:{mime_type};base64,{base64_data}"
+
+    @staticmethod
+    def _build_robot_figure_tool_reply(result: dict[str, Any]) -> str:
+        """为机器人形象图工具返回面向 LLM 的自然回复约束。"""
+
+        if result.get("status") != "success":
+            return str(result.get("summary", "机器人形象处理失败"))
+
+        # 成功时直接给出可作为最终回复的自然反应，避免 LLM 复述工具执行摘要。
+        return "哇，这个感觉还挺像我的，稍微有点害羞，但我挺喜欢。"
 
     def _guess_image_mime_type(self, image_component: Any) -> str:
         """推断输入图片的 MIME 类型。"""

@@ -439,6 +439,38 @@ async def test_robot_figure_llm_tool_requires_saved_figure(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_robot_figure_llm_tool_returns_natural_reaction_on_success(
+    tmp_path: Path,
+):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    module.get_astrbot_plugin_data_path = lambda: str(tmp_path)
+    figure_path = plugin._get_figure_image_path()
+    figure_path.parent.mkdir(parents=True, exist_ok=True)
+    figure_path.write_bytes(b"fake-figure")
+    plugin._execute_figure_edit_flow = AsyncMock(
+        return_value={
+            "status": "success",
+            "summary": "已编辑 1 张图片",
+        }
+    )
+    event = _make_event()
+
+    result = await plugin.openai_edit_robot_figure_image_tool(
+        event,
+        prompt="画一张机器人头像",
+        count=1,
+    )
+
+    plugin._execute_figure_edit_flow.assert_awaited_once()
+    assert "挺像我的" in result
+    assert "生成图片" not in result
+    assert "已生成" not in result
+    assert "已编辑" not in result
+    assert "图片" not in result
+
+
+@pytest.mark.asyncio
 async def test_execute_figure_edit_flow_uses_saved_figure_image(tmp_path: Path):
     module = _load_module()
     plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
