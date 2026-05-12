@@ -1080,29 +1080,13 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .field-row .control { width: 100%; height: 40px; }
     .edit-options {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .custom-size { margin-top: 10px; }
     .reference-panel {
       display: grid;
       gap: 12px;
       align-content: start;
-    }
-    .paste-zone {
-      display: grid;
-      place-items: center;
-      min-height: 168px;
-      padding: 16px;
-      border: 1px dashed var(--line-strong);
-      border-radius: 12px;
-      background: rgba(255,255,255,0.58);
-      color: var(--muted);
-      text-align: center;
-      outline: none;
-    }
-    .paste-zone:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(61, 115, 246, 0.12);
     }
     .reference-thumbs {
       display: grid;
@@ -1293,7 +1277,8 @@ ADMIN_HTML = r"""<!doctype html>
       .main, .preview { padding: 16px; border: 0; }
       .preview { position: static; height: auto; overflow-x: hidden; overflow-y: visible; }
       .form-grid { grid-template-columns: 1fr; }
-      .field-row { grid-template-columns: repeat(2, 1fr); }
+      .field-row,
+      .edit-options { grid-template-columns: repeat(2, 1fr); }
       .workflow-layout { min-height: 0; }
       .action-panel { grid-template-columns: 1fr; }
       .prompt-action-row { grid-template-columns: 1fr; }
@@ -1439,14 +1424,15 @@ ADMIN_HTML = r"""<!doctype html>
                 </div>
               </div>
               <div class="field-row edit-options">
+                <div><label for="editCount">数量</label><input id="editCount" class="control" type="number" min="1" max="4" value="1"></div>
                 <div><label for="editSizePreset">编辑尺寸</label><select id="editSizePreset" class="control"><option value="auto">自动</option><option value="1024x1024">方图 1024x1024</option><option value="1024x1536">竖图 1024x1536</option><option value="1536x1024">横图 1536x1024</option><option value="2048x2048">2K 方图</option><option value="2560x1440">2K 横图</option><option value="1440x2560">2K 竖图</option><option value="custom">自定义</option></select><input id="editCustomSize" class="control custom-size hidden" type="text" placeholder="例如 1280x1280"></div>
-                <div><label for="editQuality">编辑质量</label><select id="editQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
+                <div><label for="editQuality">质量</label><select id="editQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
+                <div><label for="editModeration">审核</label><select id="editModeration" class="control"><option>low</option><option>auto</option></select></div>
               </div>
             </div>
             <div id="referencePanel" class="reference-panel">
               <label for="editImage">参考图片</label>
               <input id="editImage" class="control" type="file" accept="image/png,image/jpeg,image/webp" multiple>
-              <div id="pasteImageZone" class="paste-zone" tabindex="0">点击这里后按 Ctrl+V 粘贴参考图片，可多次粘贴叠加。</div>
               <div id="referenceThumbs" class="reference-thumbs"></div>
             </div>
           </form>
@@ -1566,7 +1552,6 @@ ADMIN_HTML = r"""<!doctype html>
         item.classList.toggle("active", item.dataset.panel === panelId);
       });
       updatePreviewVisibility(panelId);
-      if (panelId === "editPanel") $("pasteImageZone").focus();
     }
 
     function updatePreviewVisibility(panelId) {
@@ -1952,9 +1937,6 @@ ADMIN_HTML = r"""<!doctype html>
           </div>
         `;
       }).join("");
-      $("pasteImageZone").textContent = files.length
-        ? `已载入 ${files.length} 张参考图片，可继续粘贴或选择文件叠加。`
-        : "点击这里后按 Ctrl+V 粘贴参考图片，可多次粘贴叠加。";
     }
 
     function addReferenceImageFile(file) {
@@ -2039,7 +2021,6 @@ ADMIN_HTML = r"""<!doctype html>
       Array.from($("editImage").files || []).forEach(addReferenceImageFile);
       $("editImage").value = "";
     });
-    $("pasteImageZone").addEventListener("paste", handlePasteImage);
     $("clearLocalCacheBtn").addEventListener("click", async () => {
       await clearLocalImageCache();
       showToast("本地图片缓存已清空");
@@ -2101,19 +2082,24 @@ ADMIN_HTML = r"""<!doctype html>
           return;
         }
         setResultState("editResultBox", "loading", "正在编辑图片，请稍候...");
-        const body = new FormData();
-        body.append("prompt", $("editPrompt").value);
-        body.append("size", resolveSizeValue("editSizePreset", "editCustomSize"));
-        body.append("quality", $("editQuality").value);
-        body.append("moderation", "low");
-        files.forEach((file) => {
-          body.append("image", file);
-        });
-        const data = await apiFetch("/api/edit", { method: "POST", body });
-        const lastImage = data.image && data.image.name;
+        const resultImages = [];
+        const count = Math.max(1, Math.min(4, Number($("editCount").value || 1)));
+        for (let index = 0; index < count; index += 1) {
+          const body = new FormData();
+          body.append("prompt", $("editPrompt").value);
+          body.append("size", resolveSizeValue("editSizePreset", "editCustomSize"));
+          body.append("quality", $("editQuality").value);
+          body.append("moderation", $("editModeration").value);
+          files.forEach((file) => {
+            body.append("image", file);
+          });
+          const data = await apiFetch("/api/edit", { method: "POST", body });
+          if (data.image && data.image.name) resultImages.push(data.image.name);
+        }
+        const lastImage = resultImages[resultImages.length - 1] || "";
         showToast("图片编辑完成");
         await loadImages(lastImage);
-        renderResultImages("editResultBox", [lastImage]);
+        renderResultImages("editResultBox", resultImages);
       } catch (error) {
         setResultState("editResultBox", "error", error.message);
         showToast(error.message);

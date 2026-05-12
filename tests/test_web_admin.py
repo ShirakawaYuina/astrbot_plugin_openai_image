@@ -518,6 +518,8 @@ def test_admin_html_supports_paste_reference_image_preview():
     assert "handlePasteImage" in module.ADMIN_HTML
     assert "clipboardData.items" in module.ADMIN_HTML
     assert "referenceImageFiles" in module.ADMIN_HTML
+    assert "pasteImageZone" not in module.ADMIN_HTML
+    assert "paste-zone" not in module.ADMIN_HTML
 
 
 def test_admin_html_places_workspace_result_above_action_panel():
@@ -561,10 +563,15 @@ def test_admin_html_supports_multiple_reference_thumbnails_on_edit_page():
     module = _load_module()
 
     assert "multiple" in module.ADMIN_HTML
+    assert "id=\"editCount\"" in module.ADMIN_HTML
+    assert "id=\"editModeration\"" in module.ADMIN_HTML
     assert "id=\"referenceThumbs\"" in module.ADMIN_HTML
     assert "class=\"reference-thumbs\"" in module.ADMIN_HTML
     assert "renderReferenceThumbnails" in module.ADMIN_HTML
     assert "body.append(\"image\", file);" in module.ADMIN_HTML
+    assert 'body.append("moderation", $("editModeration").value);' in module.ADMIN_HTML
+    assert 'const count = Math.max(1, Math.min(4, Number($("editCount").value || 1)));' in module.ADMIN_HTML
+    assert 'renderResultImages("editResultBox", resultImages);' in module.ADMIN_HTML
 
 
 def test_admin_html_uses_browser_local_image_cache_and_settings():
