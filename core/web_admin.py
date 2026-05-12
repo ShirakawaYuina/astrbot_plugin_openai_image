@@ -927,32 +927,91 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .workflow-layout {
       display: grid;
-      gap: 18px;
+      grid-template-rows: minmax(360px, 1fr) auto;
+      min-height: calc(100vh - 190px);
+      gap: 14px;
     }
     .workspace-result-panel {
       display: grid;
-      gap: 10px;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
+      min-height: 0;
+    }
+    .result-label {
+      width: fit-content;
+      margin: 0;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: #47628d;
+      font-size: 12px;
+      font-weight: 700;
     }
     .result-box {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      align-items: stretch;
       gap: 12px;
-      min-height: 280px;
+      min-height: clamp(360px, 64vh, 680px);
       padding: 14px;
       border: 1px dashed var(--line-strong);
       border-radius: 12px;
-      background: rgba(255,255,255,0.48);
+      background: rgba(248, 251, 255, 0.68);
     }
-    .result-box.empty-gallery {
+    .result-box.result-state-empty,
+    .result-box.result-state-loading,
+    .result-box.result-state-error {
       display: grid;
       grid-template-columns: 1fr;
       place-items: center;
+      text-align: center;
+    }
+    .result-box.result-state-empty {
+      border-style: dashed;
+      color: var(--muted);
+      background: #f7f9fc;
+    }
+    .result-box.result-state-loading {
+      border-color: rgba(61, 115, 246, 0.38);
+      background: #eef5ff;
+      color: var(--primary);
+    }
+    .result-box.result-state-success {
+      border-style: solid;
+      background: #fff;
+    }
+    .result-box.result-state-error {
+      border-color: rgba(194, 65, 65, 0.38);
+      background: #fff5f5;
+      color: var(--danger);
+    }
+    .result-status {
+      display: grid;
+      place-items: center;
+      gap: 10px;
+      max-width: 360px;
+      line-height: 1.6;
+    }
+    .result-status strong {
+      color: inherit;
+      font-size: 15px;
+    }
+    .result-spinner {
+      width: 34px;
+      height: 34px;
+      border: 3px solid rgba(61, 115, 246, 0.18);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: result-spin 800ms linear infinite;
+    }
+    @keyframes result-spin {
+      to { transform: rotate(360deg); }
     }
     .result-box img {
       width: 100%;
       height: 100%;
       min-height: 248px;
-      max-height: 420px;
+      max-height: 640px;
       object-fit: contain;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -961,15 +1020,35 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .action-panel {
       display: grid;
-      grid-template-columns: minmax(260px, 1fr) 320px;
-      gap: 22px;
-      padding: 16px;
+      grid-template-columns: minmax(280px, 1fr) 300px;
+      align-self: end;
+      gap: 14px;
+      padding: 14px;
       border: 1px solid var(--line);
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.68);
     }
     .action-panel-single {
       grid-template-columns: 1fr;
+    }
+    .control-stack {
+      display: grid;
+      gap: 12px;
+    }
+    .prompt-action-row {
+      display: grid;
+      grid-template-columns: 136px minmax(0, 1fr);
+      align-items: end;
+      gap: 12px;
+    }
+    .prompt-action-row .btn {
+      width: 100%;
+      min-height: 86px;
+      flex-direction: column;
+      align-self: end;
+    }
+    .prompt-field {
+      min-width: 0;
     }
     label {
       display: block;
@@ -980,7 +1059,7 @@ ADMIN_HTML = r"""<!doctype html>
     }
     textarea {
       width: 100%;
-      min-height: 116px;
+      min-height: 86px;
       resize: vertical;
       padding: 12px;
       border: 1px solid var(--line);
@@ -1212,6 +1291,11 @@ ADMIN_HTML = r"""<!doctype html>
       .preview { position: static; height: auto; overflow-x: hidden; overflow-y: visible; }
       .form-grid { grid-template-columns: 1fr; }
       .field-row { grid-template-columns: repeat(2, 1fr); }
+      .workflow-layout { min-height: 0; }
+      .action-panel { grid-template-columns: 1fr; }
+      .prompt-action-row { grid-template-columns: 1fr; }
+      .prompt-action-row .btn { min-height: 46px; flex-direction: row; }
+      .result-box { min-height: 360px; }
       .topbar, .section-head { align-items: stretch; flex-direction: column; }
       .status-pill { width: fit-content; }
     }
@@ -1313,23 +1397,27 @@ ADMIN_HTML = r"""<!doctype html>
         </div>
         <div class="workflow-layout">
           <div class="workspace-result-panel">
-            <label>生成结果</label>
-            <div id="generateResultBox" class="result-box empty-gallery">生成的图片会显示在这里，并同步进入右侧预览和历史图库。</div>
+            <div class="result-label">结果预览</div>
+            <div id="generateResultBox" class="result-box result-state-empty">暂无结果</div>
           </div>
-          <form id="generateForm" class="action-panel action-panel-single">
-            <div>
-              <label for="generatePrompt">提示词</label>
-              <textarea id="generatePrompt" placeholder="例如：浅色自然光下的现代别墅，干净构图，高细节。"></textarea>
+          <form id="generateForm" class="action-panel action-panel-single compact-control-panel">
+            <div class="control-stack">
+              <div class="prompt-action-row">
+                <button id="generateSubmit" class="btn primary" type="submit">
+                  <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="M6 6l2.8 2.8"/><path d="M15.2 15.2L18 18"/><path d="M18 6l-2.8 2.8"/><path d="M8.8 15.2L6 18"/></svg>
+                  生成图片
+                </button>
+                <div class="prompt-field">
+                  <label for="generatePrompt">提示词</label>
+                  <textarea id="generatePrompt" placeholder="例如：浅色自然光下的现代别墅，干净构图，高细节。"></textarea>
+                </div>
+              </div>
               <div class="field-row">
                 <div><label for="generateCount">数量</label><input id="generateCount" class="control" type="number" min="1" max="4" value="1"></div>
                 <div><label for="generateSizePreset">生图尺寸</label><select id="generateSizePreset" class="control"><option value="auto">自动</option><option value="1024x1024">方图 1024x1024</option><option value="1024x1536">竖图 1024x1536</option><option value="1536x1024">横图 1536x1024</option><option value="2048x2048">2K 方图</option><option value="2560x1440">2K 横图</option><option value="1440x2560">2K 竖图</option><option value="custom">自定义</option></select><input id="generateCustomSize" class="control custom-size hidden" type="text" placeholder="例如 1280x1280"></div>
                 <div><label for="generateQuality">质量</label><select id="generateQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
                 <div><label for="generateModeration">审核</label><select id="generateModeration" class="control"><option>low</option><option>auto</option></select></div>
               </div>
-              <button id="generateSubmit" class="btn primary" type="submit" style="width:100%; margin-top:16px;">
-                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="M6 6l2.8 2.8"/><path d="M15.2 15.2L18 18"/><path d="M18 6l-2.8 2.8"/><path d="M8.8 15.2L6 18"/></svg>
-                生成图片
-              </button>
             </div>
           </form>
         </div>
@@ -1344,21 +1432,25 @@ ADMIN_HTML = r"""<!doctype html>
         </div>
         <div class="workflow-layout">
           <div class="workspace-result-panel">
-            <label>编辑结果</label>
-            <div id="editResultBox" class="result-box empty-gallery">编辑后的图片会显示在这里，并同步进入右侧预览和历史图库。</div>
+            <div class="result-label">结果预览</div>
+            <div id="editResultBox" class="result-box result-state-empty">暂无结果</div>
           </div>
           <form id="editForm" class="action-panel">
-            <div>
-              <label for="editPrompt">编辑提示词</label>
-              <textarea id="editPrompt" placeholder="例如：保留主体构图，改成柔和水彩风格，背景更明亮。"></textarea>
+            <div class="control-stack">
+              <div class="prompt-action-row">
+                <button id="editSubmit" class="btn primary" type="submit">
+                  <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+                  编辑图片
+                </button>
+                <div class="prompt-field">
+                  <label for="editPrompt">编辑提示词</label>
+                  <textarea id="editPrompt" placeholder="例如：保留主体构图，改成柔和水彩风格，背景更明亮。"></textarea>
+                </div>
+              </div>
               <div class="field-row edit-options">
                 <div><label for="editSizePreset">编辑尺寸</label><select id="editSizePreset" class="control"><option value="auto">自动</option><option value="1024x1024">方图 1024x1024</option><option value="1024x1536">竖图 1024x1536</option><option value="1536x1024">横图 1536x1024</option><option value="2048x2048">2K 方图</option><option value="2560x1440">2K 横图</option><option value="1440x2560">2K 竖图</option><option value="custom">自定义</option></select><input id="editCustomSize" class="control custom-size hidden" type="text" placeholder="例如 1280x1280"></div>
                 <div><label for="editQuality">编辑质量</label><select id="editQuality" class="control"><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div>
               </div>
-              <button id="editSubmit" class="btn primary" type="submit" style="width:100%; margin-top:16px;">
-                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
-                编辑图片
-              </button>
             </div>
             <div id="referencePanel" class="reference-panel">
               <label for="editImage">参考图片</label>
@@ -1795,22 +1887,47 @@ ADMIN_HTML = r"""<!doctype html>
       $("previewBox").innerHTML = `<img src="${escapeAttribute(imageUrl(image))}" alt="${escapeAttribute(image.name)}">`;
     }
 
+    function setResultState(targetId, stateName, message = "") {
+      const box = $(targetId);
+      box.classList.remove("result-state-empty", "result-state-loading", "result-state-success", "result-state-error", "empty-gallery");
+      box.classList.add(`result-state-${stateName}`);
+      if (stateName === "empty") {
+        box.textContent = message || "暂无结果";
+        return;
+      }
+      if (stateName === "loading") {
+        box.innerHTML = `
+          <div class="result-status">
+            <span class="result-spinner" aria-hidden="true"></span>
+            <strong>${escapeHtml(message || "正在生成图片，请稍候...")}</strong>
+          </div>
+        `;
+        return;
+      }
+      if (stateName === "error") {
+        box.innerHTML = `
+          <div class="result-status" role="alert">
+            <strong>生成失败</strong>
+            <span>${escapeHtml(message || "图片任务失败，请查看错误信息后重试。")}</span>
+          </div>
+        `;
+      }
+    }
+
     function renderResultImages(targetId, imageNames) {
-      // 生成/编辑完成后，把本次结果留在操作区上方，减少用户在右侧预览和表单之间来回找图。
+      // 生成/编辑完成后，把本次结果留在大预览区，减少用户在图库和表单之间来回找图。
       const box = $(targetId);
       const names = Array.isArray(imageNames) ? imageNames.filter(Boolean) : [];
       const images = names
         .map((name) => state.images.find((item) => item.name === name))
         .filter(Boolean);
 
-      box.classList.toggle("empty-gallery", images.length === 0);
       if (!images.length) {
-        box.textContent = targetId === "generateResultBox"
-          ? "生成的图片会显示在这里，并同步进入右侧预览和历史图库。"
-          : "编辑后的图片会显示在这里，并同步进入右侧预览和历史图库。";
+        setResultState(targetId, "empty");
         return;
       }
 
+      setResultState(targetId, "success");
       box.innerHTML = images.map((image) => `
         <img src="${escapeAttribute(imageUrl(image))}" alt="${escapeAttribute(image.name)}" title="双击查看原图">
       `).join("");
@@ -1952,6 +2069,7 @@ ADMIN_HTML = r"""<!doctype html>
       event.preventDefault();
       const submit = $("generateSubmit");
       submit.disabled = true;
+      setResultState("generateResultBox", "loading", "正在生成图片，请稍候...");
       try {
         const resultImages = [];
         const count = Math.max(1, Math.min(4, Number($("generateCount").value || 1)));
@@ -1973,6 +2091,7 @@ ADMIN_HTML = r"""<!doctype html>
         await loadImages(lastImage);
         renderResultImages("generateResultBox", resultImages);
       } catch (error) {
+        setResultState("generateResultBox", "error", error.message);
         showToast(error.message);
       } finally {
         submit.disabled = false;
@@ -1986,9 +2105,11 @@ ADMIN_HTML = r"""<!doctype html>
       try {
         const files = state.referenceImageFiles;
         if (!files.length) {
+          setResultState("editResultBox", "error", "请先上传或粘贴参考图片");
           showToast("请先上传或粘贴参考图片");
           return;
         }
+        setResultState("editResultBox", "loading", "正在编辑图片，请稍候...");
         const body = new FormData();
         body.append("prompt", $("editPrompt").value);
         body.append("size", resolveSizeValue("editSizePreset", "editCustomSize"));
@@ -2003,6 +2124,7 @@ ADMIN_HTML = r"""<!doctype html>
         await loadImages(lastImage);
         renderResultImages("editResultBox", [lastImage]);
       } catch (error) {
+        setResultState("editResultBox", "error", error.message);
         showToast(error.message);
       } finally {
         submit.disabled = false;

@@ -526,10 +526,33 @@ def test_admin_html_places_workspace_result_above_action_panel():
     assert "class=\"workflow-layout\"" in module.ADMIN_HTML
     assert "class=\"workspace-result-panel\"" in module.ADMIN_HTML
     assert "class=\"action-panel\"" in module.ADMIN_HTML
-    assert 'id="generateForm" class="action-panel action-panel-single"' in module.ADMIN_HTML
+    assert "grid-template-rows: minmax(360px, 1fr) auto;" in module.ADMIN_HTML
+    assert "min-height: calc(100vh - 190px);" in module.ADMIN_HTML
+    assert 'id="generateForm" class="action-panel action-panel-single compact-control-panel"' in module.ADMIN_HTML
     assert "id=\"generateResultBox\"" in module.ADMIN_HTML
     assert "id=\"editResultBox\"" in module.ADMIN_HTML
-    assert "生成的图片会显示在这里" in module.ADMIN_HTML
+    assert "class=\"result-label\"" in module.ADMIN_HTML
+    assert "暂无结果" in module.ADMIN_HTML
+    assert "结果预览" in module.ADMIN_HTML
+
+
+def test_admin_html_result_box_has_full_state_styles_and_runtime_switching():
+    module = _load_module()
+
+    assert ".result-box.result-state-empty" in module.ADMIN_HTML
+    assert ".result-box.result-state-loading" in module.ADMIN_HTML
+    assert ".result-box.result-state-success" in module.ADMIN_HTML
+    assert ".result-box.result-state-error" in module.ADMIN_HTML
+    assert ".result-spinner" in module.ADMIN_HTML
+    assert "@keyframes result-spin" in module.ADMIN_HTML
+    assert "function setResultState" in module.ADMIN_HTML
+    assert 'setResultState("generateResultBox", "loading", "正在生成图片，请稍候...");' in module.ADMIN_HTML
+    assert 'setResultState("generateResultBox", "error", error.message);' in module.ADMIN_HTML
+    assert 'setResultState("editResultBox", "loading", "正在编辑图片，请稍候...");' in module.ADMIN_HTML
+    assert 'setResultState("editResultBox", "error", error.message);' in module.ADMIN_HTML
+    assert "result-status" in module.ADMIN_HTML
+    assert "role=\"alert\"" in module.ADMIN_HTML
+    assert "生成失败" in module.ADMIN_HTML
 
 
 def test_admin_html_supports_multiple_reference_thumbnails_on_edit_page():
