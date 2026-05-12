@@ -534,6 +534,8 @@ def test_admin_html_places_workspace_result_above_action_panel():
     assert "class=\"result-label\"" in module.ADMIN_HTML
     assert "暂无结果" in module.ADMIN_HTML
     assert "结果预览" in module.ADMIN_HTML
+    assert "输入提示词后生成图片" not in module.ADMIN_HTML
+    assert "上传或粘贴参考图片，再输入编辑提示词" not in module.ADMIN_HTML
 
 
 def test_admin_html_result_box_has_full_state_styles_and_runtime_switching():

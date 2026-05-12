@@ -1389,12 +1389,6 @@ ADMIN_HTML = r"""<!doctype html>
       </section>
 
       <section id="generatePanel" class="workspace page-panel hidden">
-        <div class="section-head">
-          <div>
-            <h1>生图</h1>
-            <p class="muted">输入提示词后生成图片，完成后会自动进入右侧预览并写入历史图库。</p>
-          </div>
-        </div>
         <div class="workflow-layout">
           <div class="workspace-result-panel">
             <div class="result-label">结果预览</div>
@@ -1424,12 +1418,6 @@ ADMIN_HTML = r"""<!doctype html>
       </section>
 
       <section id="editPanel" class="workspace page-panel hidden">
-        <div class="section-head">
-          <div>
-            <h1>编辑</h1>
-            <p class="muted">上传或粘贴参考图片，再输入编辑提示词生成新图。</p>
-          </div>
-        </div>
         <div class="workflow-layout">
           <div class="workspace-result-panel">
             <div class="result-label">结果预览</div>
