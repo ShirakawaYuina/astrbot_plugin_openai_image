@@ -478,7 +478,7 @@ def test_admin_html_preview_actions_match_requested_gallery_flow():
     assert "用于编辑" not in module.ADMIN_HTML
 
 
-def test_admin_html_gallery_uses_fixed_height_adaptive_width_flow():
+def test_admin_html_gallery_uses_responsive_masonry_without_cropping_images():
     module = _load_module()
     gallery_rule = re.search(r"\.gallery\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
     image_card_rule = re.search(r"\.image-card\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
@@ -490,17 +490,13 @@ def test_admin_html_gallery_uses_fixed_height_adaptive_width_flow():
     gallery_body = gallery_rule.group("body")
     image_card_body = image_card_rule.group("body")
     thumb_body = thumb_rule.group("body")
-    assert "display: flex;" in gallery_body
-    assert "flex-wrap: wrap;" in gallery_body
-    assert "align-items: flex-start;" in gallery_body
-    assert "gap: 14px;" in gallery_body
+    assert "column-width: 220px;" in gallery_body
+    assert "column-gap: 14px;" in gallery_body
     assert "gallery-empty" in module.ADMIN_HTML
-    assert "width: auto;" in image_card_body
-    assert "column-width:" not in gallery_body
+    assert "display: inline-block;" in image_card_body
+    assert "break-inside: avoid;" in image_card_body
     assert "grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));" not in module.ADMIN_HTML
-    assert "width: auto;" in thumb_body
-    assert "height: 260px;" in thumb_body
-    assert "max-width: min(100%, 720px);" in thumb_body
+    assert "height: auto;" in thumb_body
     assert "object-fit: contain;" in thumb_body
     assert "object-fit: cover;" not in thumb_body
     assert "aspect-ratio:" not in thumb_body
