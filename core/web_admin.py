@@ -829,8 +829,10 @@ ADMIN_HTML = r"""<!doctype html>
       transform: none;
     }
     .gallery {
-      column-width: 220px;
-      column-gap: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 14px;
       min-height: 300px;
     }
     .gallery-empty {
@@ -854,16 +856,13 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .image-card {
       position: relative;
-      display: inline-block;
-      width: 100%;
-      margin: 0 0 14px;
+      width: auto;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #fff;
       box-shadow: 0 10px 26px rgba(48, 76, 126, 0.07);
       transition: border 160ms ease, transform 160ms ease;
-      break-inside: avoid;
     }
     .image-card.selected {
       border-color: var(--primary);
@@ -888,8 +887,9 @@ ADMIN_HTML = r"""<!doctype html>
       box-shadow: 0 8px 20px rgba(24, 32, 51, 0.12);
     }
     .thumb {
-      width: 100%;
-      height: auto;
+      width: auto;
+      height: 260px;
+      max-width: min(100%, 720px);
       object-fit: contain;
       display: block;
       background: #edf3fb;
