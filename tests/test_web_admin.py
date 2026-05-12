@@ -478,22 +478,24 @@ def test_admin_html_preview_actions_match_requested_gallery_flow():
     assert "用于编辑" not in module.ADMIN_HTML
 
 
-def test_admin_html_gallery_uses_left_to_right_grid_without_cropping_images():
+def test_admin_html_gallery_uses_masonry_columns_without_cropping_images():
     module = _load_module()
     gallery_rule = re.search(r"\.gallery\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
+    image_card_rule = re.search(r"\.image-card\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
     thumb_rule = re.search(r"\.thumb\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
 
     assert gallery_rule is not None
+    assert image_card_rule is not None
     assert thumb_rule is not None
     gallery_body = gallery_rule.group("body")
+    image_card_body = image_card_rule.group("body")
     thumb_body = thumb_rule.group("body")
-    assert "display: grid;" in gallery_body
-    assert "grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));" in gallery_body
-    assert "align-items: start;" in gallery_body
-    assert "column-width:" not in gallery_body
-    assert "column-gap:" not in gallery_body
+    assert "column-width: 220px;" in gallery_body
+    assert "column-gap: 14px;" in gallery_body
     assert "gallery-empty" in module.ADMIN_HTML
-    assert "grid-column: 1 / -1;" in module.ADMIN_HTML
+    assert "display: inline-block;" in image_card_body
+    assert "break-inside: avoid;" in image_card_body
+    assert "grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));" not in module.ADMIN_HTML
     assert "height: auto;" in thumb_body
     assert "object-fit: contain;" in thumb_body
     assert "object-fit: cover;" not in thumb_body
