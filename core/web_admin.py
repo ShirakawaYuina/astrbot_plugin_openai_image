@@ -829,14 +829,11 @@ ADMIN_HTML = r"""<!doctype html>
       transform: none;
     }
     .gallery {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      align-items: start;
-      gap: 14px;
+      column-width: 220px;
+      column-gap: 14px;
       min-height: 300px;
     }
     .gallery-empty {
-      grid-column: 1 / -1;
       width: 100%;
       box-sizing: border-box;
     }
@@ -857,13 +854,16 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .image-card {
       position: relative;
+      display: inline-block;
       width: 100%;
+      margin: 0 0 14px;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #fff;
       box-shadow: 0 10px 26px rgba(48, 76, 126, 0.07);
       transition: border 160ms ease, transform 160ms ease;
+      break-inside: avoid;
     }
     .image-card.selected {
       border-color: var(--primary);
@@ -889,7 +889,7 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .thumb {
       width: 100%;
-      aspect-ratio: 4 / 3;
+      height: auto;
       object-fit: contain;
       display: block;
       background: #edf3fb;
