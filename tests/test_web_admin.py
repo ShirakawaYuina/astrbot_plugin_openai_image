@@ -498,6 +498,31 @@ def test_admin_html_gallery_uses_left_to_right_grid_without_large_row_gaps():
     assert "object-fit: cover;" not in thumb_body
 
 
+def test_admin_html_gallery_supports_pagination_and_page_size_setting():
+    module = _load_module()
+
+    assert "id=\"galleryPagination\"" in module.ADMIN_HTML
+    assert "id=\"pageSummary\"" in module.ADMIN_HTML
+    assert "id=\"prevPageBtn\"" in module.ADMIN_HTML
+    assert "id=\"nextPageBtn\"" in module.ADMIN_HTML
+    assert "id=\"galleryPageSizeInput\"" in module.ADMIN_HTML
+    assert "id=\"saveGalleryPageSizeBtn\"" in module.ADMIN_HTML
+    assert "const GALLERY_PAGE_SIZE_KEY" in module.ADMIN_HTML
+    assert "const DEFAULT_GALLERY_PAGE_SIZE = 30;" in module.ADMIN_HTML
+    assert "const MIN_GALLERY_PAGE_SIZE = 5;" in module.ADMIN_HTML
+    assert "const MAX_GALLERY_PAGE_SIZE = 200;" in module.ADMIN_HTML
+    assert "function clampGalleryPageSize(value)" in module.ADMIN_HTML
+    assert "function saveGalleryPageSizeSetting()" in module.ADMIN_HTML
+    assert "localStorage.setItem(GALLERY_PAGE_SIZE_KEY, String(state.galleryPageSize));" in module.ADMIN_HTML
+    assert "function paginatedImages(images)" in module.ADMIN_HTML
+    assert "images.slice(startIndex, startIndex + state.galleryPageSize)" in module.ADMIN_HTML
+    assert "function updateGalleryPagination(totalImages, startIndex, pageImages, totalPages)" in module.ADMIN_HTML
+    assert "function resetGalleryPageAndRender()" in module.ADMIN_HTML
+    assert 'addEventListener("input", resetGalleryPageAndRender)' in module.ADMIN_HTML
+    assert 'addEventListener("change", resetGalleryPageAndRender)' in module.ADMIN_HTML
+    assert "hydrateGalleryImages(pageImages);" in module.ADMIN_HTML
+
+
 def test_admin_html_selects_gallery_image_without_rerendering_gallery():
     module = _load_module()
     select_image_section = module.ADMIN_HTML.split("async function selectImage", 1)[1].split(

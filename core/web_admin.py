@@ -840,6 +840,21 @@ ADMIN_HTML = r"""<!doctype html>
       width: 100%;
       box-sizing: border-box;
     }
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 16px;
+      min-height: 40px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .pagination-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
     .image-card {
       position: relative;
       width: 100%;
@@ -1273,6 +1288,27 @@ ADMIN_HTML = r"""<!doctype html>
       gap: 14px;
       max-width: 760px;
     }
+    .settings-card {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .settings-card label {
+      font-weight: 700;
+      color: var(--text);
+    }
+    .settings-inline {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 10px;
+    }
+    .settings-inline .control {
+      width: 160px;
+    }
     .settings-actions {
       display: flex;
       flex-wrap: wrap;
@@ -1448,6 +1484,13 @@ ADMIN_HTML = r"""<!doctype html>
           </select>
         </div>
         <div id="gallery" class="gallery"></div>
+        <div id="galleryPagination" class="pagination-bar hidden">
+          <span id="pageSummary">第 1 / 1 页</span>
+          <div class="pagination-actions">
+            <button id="prevPageBtn" class="btn" type="button">上一页</button>
+            <button id="nextPageBtn" class="btn" type="button">下一页</button>
+          </div>
+        </div>
       </section>
 
       <section id="generatePanel" class="workspace page-panel hidden">
@@ -1527,6 +1570,14 @@ ADMIN_HTML = r"""<!doctype html>
           </div>
         </div>
         <div class="settings-grid">
+          <div class="settings-card">
+            <label for="galleryPageSizeInput">历史图库每页显示数量</label>
+            <div class="settings-inline">
+              <input id="galleryPageSizeInput" class="control" type="number" min="5" max="200" step="1">
+              <button id="saveGalleryPageSizeBtn" class="btn" type="button">保存数量</button>
+            </div>
+            <p class="muted">用于控制当前浏览器历史图库分页数量，范围 5-200。</p>
+          </div>
           <div id="cacheInfo" class="cache-info">
             <div class="detail-row"><span>缩略图缓存</span><strong id="thumbnailCacheInfo">0 张 / 0 B</strong></div>
             <div class="detail-row"><span>原图缓存</span><strong id="originalCacheInfo">0 张 / 0 B</strong></div>
@@ -1560,6 +1611,10 @@ ADMIN_HTML = r"""<!doctype html>
   <div id="toast" class="toast hidden"></div>
 
   <script>
+    const GALLERY_PAGE_SIZE_KEY = "openaiImageAdminGalleryPageSize";
+    const DEFAULT_GALLERY_PAGE_SIZE = 30;
+    const MIN_GALLERY_PAGE_SIZE = 5;
+    const MAX_GALLERY_PAGE_SIZE = 200;
     const state = {
       token: localStorage.getItem("openaiImageAdminToken") || "",
       images: [],
@@ -1567,6 +1622,8 @@ ADMIN_HTML = r"""<!doctype html>
       activePanel: "galleryPanel",
       referenceImageFiles: [],
       imageCacheDb: null,
+      galleryPage: 1,
+      galleryPageSize: DEFAULT_GALLERY_PAGE_SIZE,
     };
     const $ = (id) => document.getElementById(id);
     const IMAGE_CACHE_DB_NAME = "openai-image-admin-cache";
@@ -1841,6 +1898,27 @@ ADMIN_HTML = r"""<!doctype html>
       return `${width}×${height}`;
     }
 
+    function clampGalleryPageSize(value) {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) return DEFAULT_GALLERY_PAGE_SIZE;
+      return Math.max(MIN_GALLERY_PAGE_SIZE, Math.min(MAX_GALLERY_PAGE_SIZE, Math.floor(numericValue)));
+    }
+
+    function loadGalleryPageSizeSetting() {
+      state.galleryPageSize = clampGalleryPageSize(localStorage.getItem(GALLERY_PAGE_SIZE_KEY));
+      $("galleryPageSizeInput").value = String(state.galleryPageSize);
+    }
+
+    function saveGalleryPageSizeSetting() {
+      // 分页数量只影响当前浏览器的后台展示，不写入插件配置，避免后台重启或配置迁移。
+      state.galleryPageSize = clampGalleryPageSize($("galleryPageSizeInput").value);
+      localStorage.setItem(GALLERY_PAGE_SIZE_KEY, String(state.galleryPageSize));
+      $("galleryPageSizeInput").value = String(state.galleryPageSize);
+      state.galleryPage = 1;
+      renderGallery();
+      showToast("每页显示数量已保存");
+    }
+
     function updatePreviewImageDimensions(image, previewImage) {
       // 预览区需要展示图片文件真实像素尺寸，而不是接口请求里的 auto/square 等生成参数。
       if (!image || state.selected?.name !== image.name) return;
@@ -1860,6 +1938,30 @@ ADMIN_HTML = r"""<!doctype html>
       return images;
     }
 
+    function paginatedImages(images) {
+      const totalPages = Math.max(1, Math.ceil(images.length / state.galleryPageSize));
+      state.galleryPage = Math.max(1, Math.min(totalPages, state.galleryPage));
+      const startIndex = (state.galleryPage - 1) * state.galleryPageSize;
+      return {
+        pageImages: images.slice(startIndex, startIndex + state.galleryPageSize),
+        startIndex,
+        totalPages,
+      };
+    }
+
+    function updateGalleryPagination(totalImages, startIndex, pageImages, totalPages) {
+      const pagination = $("galleryPagination");
+      if (!totalImages) {
+        pagination.classList.add("hidden");
+        return;
+      }
+      pagination.classList.toggle("hidden", totalPages <= 1);
+      const endIndex = startIndex + pageImages.length;
+      $("pageSummary").textContent = `第 ${state.galleryPage} / ${totalPages} 页，显示 ${startIndex + 1}-${endIndex} 张，共 ${totalImages} 张`;
+      $("prevPageBtn").disabled = state.galleryPage <= 1;
+      $("nextPageBtn").disabled = state.galleryPage >= totalPages;
+    }
+
     function renderGallery() {
       const gallery = $("gallery");
       const images = filteredImages();
@@ -1867,9 +1969,12 @@ ADMIN_HTML = r"""<!doctype html>
       refreshCacheInfo().catch(() => {});
       if (!images.length) {
         gallery.innerHTML = '<div class="empty-gallery gallery-empty">暂无图片，可切换到生图页面创建新图片。</div>';
+        updateGalleryPagination(0, 0, [], 1);
         return;
       }
-      gallery.innerHTML = images.map((image) => {
+      const { pageImages, startIndex, totalPages } = paginatedImages(images);
+      updateGalleryPagination(images.length, startIndex, pageImages, totalPages);
+      gallery.innerHTML = pageImages.map((image) => {
         const safeName = escapeHtml(image.name);
         const safeAttrName = escapeAttribute(image.name);
         return `
@@ -1896,7 +2001,7 @@ ADMIN_HTML = r"""<!doctype html>
           deleteImageByName(button.dataset.name).catch((error) => showToast(error.message));
         });
       });
-      hydrateGalleryImages(images);
+      hydrateGalleryImages(pageImages);
     }
 
     function updateGallerySelection() {
@@ -2018,6 +2123,11 @@ ADMIN_HTML = r"""<!doctype html>
       }
     }
 
+    function resetGalleryPageAndRender() {
+      state.galleryPage = 1;
+      renderGallery();
+    }
+
     function renderReferenceThumbnails() {
       // 多参考图只在编辑页右侧显示缩略图，真正提交时仍按文件对象逐张追加到 FormData。
       const files = state.referenceImageFiles;
@@ -2116,6 +2226,7 @@ ADMIN_HTML = r"""<!doctype html>
         state.token = data.token;
         localStorage.setItem("openaiImageAdminToken", state.token);
         $("loginMask").classList.add("hidden");
+        loadGalleryPageSizeSetting();
         await loadImages();
       } catch (error) {
         showToast(error.message);
@@ -2123,9 +2234,18 @@ ADMIN_HTML = r"""<!doctype html>
     });
 
     $("refreshBtn").addEventListener("click", () => loadImages().catch((error) => showToast(error.message)));
-    $("searchInput").addEventListener("input", renderGallery);
-    $("typeFilter").addEventListener("change", renderGallery);
-    $("sortFilter").addEventListener("change", renderGallery);
+    $("searchInput").addEventListener("input", resetGalleryPageAndRender);
+    $("typeFilter").addEventListener("change", resetGalleryPageAndRender);
+    $("sortFilter").addEventListener("change", resetGalleryPageAndRender);
+    $("prevPageBtn").addEventListener("click", () => {
+      state.galleryPage = Math.max(1, state.galleryPage - 1);
+      renderGallery();
+    });
+    $("nextPageBtn").addEventListener("click", () => {
+      state.galleryPage += 1;
+      renderGallery();
+    });
+    $("saveGalleryPageSizeBtn").addEventListener("click", saveGalleryPageSizeSetting);
     $("generateSizePreset").addEventListener("change", () => syncCustomSize("generateSizePreset", "generateCustomSize"));
     $("editSizePreset").addEventListener("change", () => syncCustomSize("editSizePreset", "editCustomSize"));
     $("editImage").addEventListener("change", () => {
@@ -2221,7 +2341,10 @@ ADMIN_HTML = r"""<!doctype html>
 
     if (state.token) {
       $("loginMask").classList.add("hidden");
+      loadGalleryPageSizeSetting();
       loadImages().catch(() => $("loginMask").classList.remove("hidden"));
+    } else {
+      loadGalleryPageSizeSetting();
     }
   </script>
 </body>
