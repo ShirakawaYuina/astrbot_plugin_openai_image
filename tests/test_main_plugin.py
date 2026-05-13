@@ -463,11 +463,32 @@ async def test_robot_figure_llm_tool_returns_natural_reaction_on_success(
     )
 
     plugin._execute_figure_edit_flow.assert_awaited_once()
+    enhanced_prompt = plugin._execute_figure_edit_flow.await_args.kwargs["prompt"]
+    assert "用户提示词：画一张机器人头像" in enhanced_prompt
+    assert "表情" in enhanced_prompt
+    assert "动作" in enhanced_prompt
+    assert "服装" in enhanced_prompt
     assert "挺像我的" in result
     assert "生成图片" not in result
     assert "已生成" not in result
     assert "已编辑" not in result
     assert "图片" not in result
+
+
+def test_build_robot_figure_edit_prompt_encourages_scene_specific_variation():
+    module = _load_module()
+
+    prompt = module.OpenAIImagePlugin._build_robot_figure_edit_prompt(
+        "穿着侦探风衣，在雨夜街道上自信回头"
+    )
+
+    assert "保持角色核心身份" in prompt
+    assert "表情" in prompt
+    assert "动作" in prompt
+    assert "姿态" in prompt
+    assert "服装可以随主题" in prompt
+    assert "避免总是生成正脸站立" in prompt
+    assert "用户提示词：穿着侦探风衣，在雨夜街道上自信回头" in prompt
 
 
 @pytest.mark.asyncio

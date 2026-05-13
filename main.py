@@ -222,6 +222,7 @@ class OpenAIImagePlugin(Star):
 
         当用户要求生成或编辑机器人自己、Bot 形象、助手形象、看板娘、
         机器人头像、机器人立绘、机器人表情包等与机器人有关的图像时调用。
+        生成时应鼓励图像模型根据提示词调整表情、动作、姿态和服装，避免机器人形象单一化。
         工具成功后应以机器人本人看到新形象的自然反应回复，不要描述工具执行过程。
 
         Args:
@@ -240,7 +241,7 @@ class OpenAIImagePlugin(Star):
 
         result = await self._execute_figure_edit_flow(
             event=event,
-            prompt=str(prompt or "").strip(),
+            prompt=self._build_robot_figure_edit_prompt(prompt),
             count=int(count),
             size=size,
             quality=quality,
@@ -980,6 +981,21 @@ class OpenAIImagePlugin(Star):
         mime_type = mimetypes.guess_type(str(image_path))[0] or "image/png"
         base64_data = base64.b64encode(image_bytes).decode("utf-8")
         return f"data:{mime_type};base64,{base64_data}"
+
+    @staticmethod
+    def _build_robot_figure_edit_prompt(prompt: str) -> str:
+        """构建机器人形象图工具专用提示词，强化表情、动作和服装的多样化。"""
+
+        clean_prompt = str(prompt or "").strip()
+        return (
+            "请以提供的机器人形象参考图为基础生成新图，保持角色核心身份、脸部识别特征、"
+            "发型/轮廓/主要配色等能代表机器人的关键设定一致。"
+            "同时必须根据用户提示词主动设计贴合场景的表情、动作、姿态、视线、肢体语言和服装，"
+            "服装可以随主题、职业、季节、活动或情绪变化而变化。"
+            "避免总是生成正脸站立、微笑、静态半身、相同手势或相同服装；"
+            "画面应体现提示词中的情绪和事件，让机器人看起来正在自然参与该场景。"
+            f"\n\n用户提示词：{clean_prompt}"
+        )
 
     @staticmethod
     def _build_robot_figure_tool_reply(result: dict[str, Any]) -> str:
