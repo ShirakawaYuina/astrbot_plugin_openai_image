@@ -829,17 +829,22 @@ ADMIN_HTML = r"""<!doctype html>
       transform: none;
     }
     .gallery {
-      column-width: 220px;
-      column-gap: 14px;
+      display: grid;
+      grid-template-columns: repeat(var(--gallery-column-count, 1), minmax(0, 1fr));
+      align-items: start;
+      gap: 14px;
       min-height: 300px;
     }
-    .gallery.fixed-columns {
-      column-width: auto;
-      column-count: var(--gallery-column-count, 4);
+    .gallery-column {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
     }
     .gallery-empty {
       width: 100%;
       box-sizing: border-box;
+      grid-column: 1 / -1;
     }
     .pagination-bar {
       display: flex;
@@ -858,16 +863,15 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .image-card {
       position: relative;
-      display: inline-block;
+      display: block;
       width: 100%;
-      margin: 0 0 14px;
+      margin: 0;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #fff;
       box-shadow: 0 10px 26px rgba(48, 76, 126, 0.07);
       transition: border 160ms ease, transform 160ms ease;
-      break-inside: avoid;
     }
     .image-card.selected {
       border-color: var(--primary);
@@ -1652,6 +1656,7 @@ ADMIN_HTML = r"""<!doctype html>
     const IMAGE_CACHE_DB_NAME = "openai-image-admin-cache";
     const IMAGE_CACHE_STORE = "images";
     const REFERENCE_IMAGE_PREVIEW_URLS = new WeakMap();
+    let resizeRenderTimer = null;
 
     function authHeaders(extra = {}) {
       return { ...extra, Authorization: `Bearer ${state.token}` };
@@ -1935,10 +1940,28 @@ ADMIN_HTML = r"""<!doctype html>
 
     function applyGalleryColumnSetting() {
       const gallery = $("gallery");
-      const useFixedColumns = state.galleryColumnMode === "fixed";
-      // 固定列数只影响当前浏览器的展示密度；自动模式继续使用 CSS column-width 自适应。
-      gallery.classList.toggle("fixed-columns", useFixedColumns);
-      gallery.style.setProperty("--gallery-column-count", String(state.galleryColumnCount));
+      gallery.style.setProperty("--gallery-column-count", String(resolveGalleryColumnCount()));
+    }
+
+    function resolveGalleryColumnCount() {
+      if (state.galleryColumnMode === "fixed") return state.galleryColumnCount;
+      const galleryWidth = $("gallery").clientWidth || 0;
+      if (!galleryWidth) return 1;
+      const targetColumnWidth = 220;
+      const columnGap = 14;
+      const estimatedColumns = Math.floor((galleryWidth + columnGap) / (targetColumnWidth + columnGap));
+      return Math.max(1, estimatedColumns);
+    }
+
+    function distributeImagesByRows(images) {
+      const columnCount = resolveGalleryColumnCount();
+      const columns = Array.from({ length: columnCount }, () => []);
+      images.forEach((image, index) => {
+        // 这里按行优先分发：排序后的第 1-N 张先铺满第一行，再进入下一行。
+        // 每列内部仍是纵向自然流，保留图片自适应高度和上下紧密衔接的瀑布流观感。
+        columns[index % columnCount].push(image);
+      });
+      return columns;
     }
 
     function loadGalleryPageSizeSetting() {
@@ -2038,7 +2061,11 @@ ADMIN_HTML = r"""<!doctype html>
       }
       const { pageImages, startIndex, totalPages } = paginatedImages(images);
       updateGalleryPagination(images.length, startIndex, pageImages, totalPages);
-      gallery.innerHTML = pageImages.map((image) => {
+      const columns = distributeImagesByRows(pageImages);
+      gallery.style.setProperty("--gallery-column-count", String(columns.length || 1));
+      gallery.innerHTML = columns.map((columnImages) => `
+        <div class="gallery-column">
+          ${columnImages.map((image) => {
         const safeName = escapeHtml(image.name);
         const safeAttrName = escapeAttribute(image.name);
         return `
@@ -2055,7 +2082,9 @@ ADMIN_HTML = r"""<!doctype html>
           </div>
         </button>
       `;
-      }).join("");
+      }).join("")}
+        </div>
+      `).join("");
       gallery.querySelectorAll(".image-card").forEach((card) => {
         card.addEventListener("click", () => selectImage(card.dataset.name).catch((error) => showToast(error.message)));
       });
@@ -2334,6 +2363,12 @@ ADMIN_HTML = r"""<!doctype html>
     $("previewBox").addEventListener("dblclick", openSelectedOriginalImage);
     $("viewOriginalBtn").addEventListener("click", openSelectedOriginalImage);
     $("deleteImageBtn").addEventListener("click", () => deleteSelectedImage().catch((error) => showToast(error.message)));
+    window.addEventListener("resize", () => {
+      window.clearTimeout(resizeRenderTimer);
+      resizeRenderTimer = window.setTimeout(() => {
+        if (state.activePanel === "galleryPanel") renderGallery();
+      }, 120);
+    });
 
     $("generateForm").addEventListener("submit", async (event) => {
       event.preventDefault();
