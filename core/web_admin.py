@@ -1396,7 +1396,7 @@ ADMIN_HTML = r"""<!doctype html>
       align-items: end;
       gap: 12px;
     }
-    .prompt-action-row .btn {
+    .prompt-action-row > .btn {
       width: 100%;
       min-height: 86px;
       flex-direction: column;
@@ -1408,25 +1408,29 @@ ADMIN_HTML = r"""<!doctype html>
     .prompt-label-row {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       margin-bottom: 8px;
+      min-height: 30px;
+      white-space: nowrap;
     }
     .prompt-label-row label {
       margin-bottom: 0;
+      line-height: 30px;
     }
     .prompt-optimize-btn {
-      min-height: 30px;
-      padding: 0 10px;
+      min-height: 24px;
+      padding: 0 8px;
       border: 1px solid rgba(65, 116, 201, 0.26);
-      border-radius: 8px;
+      border-radius: 999px;
       background: #f4f8ff;
       color: #1f4f9f;
       font-size: 12px;
       font-weight: 700;
+      line-height: 1;
     }
     .prompt-optimize-btn svg {
-      width: 15px;
-      height: 15px;
+      width: 13px;
+      height: 13px;
       stroke-width: 2.2;
     }
     .prompt-optimize-btn:hover {
@@ -1771,8 +1775,7 @@ ADMIN_HTML = r"""<!doctype html>
       .workflow-layout { min-height: 0; }
       .action-panel { grid-template-columns: 1fr; }
       .prompt-action-row { grid-template-columns: 1fr; }
-      .prompt-action-row .btn { min-height: 46px; flex-direction: row; }
-      .prompt-label-row { flex-wrap: wrap; }
+      .prompt-action-row > .btn { min-height: 46px; flex-direction: row; }
       .result-box { min-height: 360px; }
       .topbar, .section-head { align-items: stretch; flex-direction: column; }
       .status-pill { width: fit-content; }

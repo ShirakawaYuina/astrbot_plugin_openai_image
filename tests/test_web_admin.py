@@ -849,6 +849,10 @@ def test_admin_html_supports_prompt_optimizer_buttons():
     assert 'apiFetch("/api/optimize-prompt"' in module.ADMIN_HTML
     assert "textarea.disabled = true;" in module.ADMIN_HTML
     assert "button.classList.add(\"is-loading\");" in module.ADMIN_HTML
+    assert ".prompt-action-row > .btn" in module.ADMIN_HTML
+    assert "border-radius: 999px;" in module.ADMIN_HTML
+    assert "min-height: 24px;" in module.ADMIN_HTML
+    assert ".prompt-label-row { flex-wrap: wrap; }" not in module.ADMIN_HTML
 
 
 def test_admin_html_uses_browser_local_image_cache_and_settings():
