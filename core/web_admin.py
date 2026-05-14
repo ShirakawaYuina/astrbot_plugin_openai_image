@@ -10,15 +10,20 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
+import aiohttp
 from aiohttp import web
 
 from astrbot.api import logger
+from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
 from .storage.cache_cleaner import IMAGE_SUFFIXES
 
+PLUGIN_DATA_DIR_NAME = "astrbot_plugin_openai_image"
 DEFAULT_ADMIN_HOST = "127.0.0.1"
 DEFAULT_ADMIN_PORT = 7865
+PROMPT_OPTIMIZER_SETTINGS_FILE_NAME = "prompt_optimizer_settings.json"
 TOKEN_BYTES = 24
 AUTH_COOKIE_NAME = "openai_image_admin_token"
 LOG_PROMPT_MAX_LENGTH = 120
@@ -28,6 +33,15 @@ IMAGE_MIME_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
 }
+PROMPT_OPTIMIZER_MODE_LABELS = {
+    "generate": "文生图",
+    "edit": "图片编辑",
+}
+PROMPT_OPTIMIZER_SYSTEM_PROMPT = (
+    "你是专业的图像生成提示词优化师。请把用户的中文提示词扩写为更适合图像模型理解的提示词，"
+    "强化主体、场景、构图、光线、材质、风格、镜头和细节层次。必须保留用户原始意图，"
+    "不要添加与原意冲突的元素，不要输出解释、标题、编号或 Markdown，只输出优化后的提示词正文。"
+)
 
 
 @dataclass(slots=True)
@@ -58,6 +72,110 @@ class WebAdminSettings:
             password=password,
             requested_enabled=requested_enabled,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class PromptOptimizerSettings:
+    """提示词优化模型配置。
+
+    该功能走独立的 OpenAI 兼容 Chat Completions 接口，避免和图片接口供应商混用；
+    任一关键字段缺失时显式报错，提醒用户到插件设置页补齐配置。
+    """
+
+    model: str
+    base_url: str
+    api_key: str
+    timeout_seconds: int
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> PromptOptimizerSettings:
+        """从网页后台保存的配置读取提示词优化模型参数，并校验必填字段。"""
+
+        model = str(config.get("prompt_optimizer_model", "") or "").strip()
+        base_url = (
+            str(config.get("prompt_optimizer_base_url", "") or "").strip().rstrip("/")
+        )
+        api_key = str(config.get("prompt_optimizer_api_key", "") or "").strip()
+        if not model:
+            raise ValueError("请先在插件设置中配置提示词优化模型名称")
+        if not base_url:
+            raise ValueError("请先在插件设置中配置提示词优化 Base URL")
+        if not api_key:
+            raise ValueError("请先在插件设置中配置提示词优化 API Key")
+
+        return cls(
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            timeout_seconds=max(
+                5, int(config.get("request_timeout_seconds", 180) or 180)
+            ),
+        )
+
+
+class PromptOptimizerSettingsStore:
+    """读写网页后台专用的提示词优化配置。"""
+
+    def __init__(self, settings_path: Path | None = None) -> None:
+        self.settings_path = settings_path or _default_prompt_optimizer_settings_path()
+
+    def load(self) -> dict[str, Any]:
+        """读取本地配置文件，文件不存在时返回空配置。"""
+
+        if not self.settings_path.is_file():
+            return {}
+        try:
+            data = json.loads(self.settings_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"提示词优化配置读取失败: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError("提示词优化配置格式错误")
+        return data
+
+    def public_payload(self) -> dict[str, Any]:
+        """返回可给前端展示的配置摘要，API Key 只暴露是否已保存。"""
+
+        settings = self.load()
+        return {
+            "model": str(settings.get("prompt_optimizer_model", "") or ""),
+            "base_url": str(settings.get("prompt_optimizer_base_url", "") or ""),
+            "has_api_key": bool(
+                str(settings.get("prompt_optimizer_api_key", "") or "").strip()
+            ),
+        }
+
+    def save_public_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """保存前端提交的模型配置，空 API Key 表示保留旧密钥。"""
+
+        current_settings = self.load()
+        next_settings = {
+            "prompt_optimizer_model": str(payload.get("model", "") or "").strip(),
+            "prompt_optimizer_base_url": str(payload.get("base_url", "") or "").strip(),
+            "prompt_optimizer_api_key": str(
+                current_settings.get("prompt_optimizer_api_key", "") or ""
+            ).strip(),
+        }
+
+        new_api_key = str(payload.get("api_key", "") or "").strip()
+        if new_api_key:
+            next_settings["prompt_optimizer_api_key"] = new_api_key
+
+        self.settings_path.parent.mkdir(parents=True, exist_ok=True)
+        self.settings_path.write_text(
+            json.dumps(next_settings, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return self.public_payload()
+
+
+def _default_prompt_optimizer_settings_path() -> Path:
+    """返回提示词优化设置文件路径，统一放在插件数据目录内。"""
+
+    return (
+        Path(get_astrbot_plugin_data_path())
+        / PLUGIN_DATA_DIR_NAME
+        / PROMPT_OPTIMIZER_SETTINGS_FILE_NAME
+    )
 
 
 class ImageLibrary:
@@ -219,6 +337,129 @@ def create_edit_job(
     return _job
 
 
+async def optimize_prompt_text(
+    *,
+    settings_store: PromptOptimizerSettingsStore,
+    prompt: str,
+    mode: str,
+) -> str:
+    """调用用户配置的文本模型扩写提示词。
+
+    网页后台只负责把当前输入发送给优化模型，并把纯文本结果回填到输入框；
+    配置缺失、网络错误或响应结构异常都会抛出明确异常，避免用户误以为已经优化成功。
+    """
+
+    clean_prompt = str(prompt or "").strip()
+    if not clean_prompt:
+        raise ValueError("提示词不能为空")
+
+    settings = PromptOptimizerSettings.from_config(settings_store.load())
+    endpoint = _resolve_chat_completions_endpoint(settings.base_url)
+    payload = _build_prompt_optimizer_payload(
+        model=settings.model,
+        prompt=clean_prompt,
+        mode=mode,
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {settings.api_key}",
+    }
+    timeout = aiohttp.ClientTimeout(total=settings.timeout_seconds)
+    async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+        try:
+            async with session.post(
+                endpoint, json=payload, headers=headers
+            ) as response:
+                response.raise_for_status()
+                response_data = await response.json()
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"提示词优化接口请求失败: {exc}") from exc
+
+    optimized_prompt = _extract_optimized_prompt(response_data)
+    if not optimized_prompt:
+        raise RuntimeError("提示词优化接口未返回可用文本")
+    return optimized_prompt
+
+
+def _resolve_chat_completions_endpoint(base_url: str) -> str:
+    """根据 Base URL 推导 OpenAI 兼容 Chat Completions 接口地址。"""
+
+    normalized = str(base_url or "").strip().rstrip("/")
+    if not normalized:
+        raise ValueError("提示词优化 Base URL 不能为空")
+
+    chat_suffix = "/chat/completions"
+    if normalized.endswith(chat_suffix):
+        return normalized
+
+    parsed = urlsplit(normalized)
+    base_path = parsed.path.rstrip("/")
+    merged_path = f"{base_path}{chat_suffix}" if base_path else chat_suffix
+    return urlunsplit((parsed.scheme, parsed.netloc, merged_path, "", ""))
+
+
+def _build_prompt_optimizer_payload(
+    *,
+    model: str,
+    prompt: str,
+    mode: str,
+) -> dict[str, Any]:
+    """构造提示词优化请求体，集中约束模型只返回最终提示词。"""
+
+    mode_label = PROMPT_OPTIMIZER_MODE_LABELS.get(str(mode or "").strip(), "图片生成")
+    user_prompt = (
+        f"当前任务类型：{mode_label}\n"
+        "请优化以下提示词，使其更具体、更适合图像模型执行：\n"
+        f"{prompt}"
+    )
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": PROMPT_OPTIMIZER_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.7,
+    }
+
+
+def _extract_optimized_prompt(response_data: Any) -> str:
+    """从 Chat Completions 响应中提取助手文本。"""
+
+    if not isinstance(response_data, dict):
+        raise RuntimeError(
+            f"提示词优化接口响应结构异常: {type(response_data).__name__}"
+        )
+
+    choices = response_data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise RuntimeError("提示词优化接口响应缺少 choices")
+
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        raise RuntimeError("提示词优化接口响应 choices[0] 不是对象")
+
+    message = first_choice.get("message")
+    if not isinstance(message, dict):
+        raise RuntimeError("提示词优化接口响应缺少 message")
+
+    content = message.get("content")
+    if isinstance(content, str):
+        return content.strip()
+
+    # 部分兼容服务会把 content 返回为多段结构，这里只拼接文本段，不把未知段伪装为成功内容。
+    if isinstance(content, list):
+        text_parts: list[str] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if isinstance(text, str) and text.strip():
+                text_parts.append(text.strip())
+        return "\n".join(text_parts).strip()
+
+    raise RuntimeError("提示词优化接口响应 message.content 不是文本")
+
+
 class WebAdminServer:
     """插件内置的 aiohttp 网页后台。"""
 
@@ -228,6 +469,7 @@ class WebAdminServer:
         self.plugin = plugin
         self.settings = settings
         self.library = ImageLibrary(cache_dir)
+        self.prompt_optimizer_settings = PromptOptimizerSettingsStore()
         self._tokens: set[str] = set()
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
@@ -277,6 +519,15 @@ class WebAdminServer:
         app.router.add_delete("/api/images/{file_name}", self._handle_delete_image)
         app.router.add_post("/api/generate", self._handle_generate)
         app.router.add_post("/api/edit", self._handle_edit)
+        app.router.add_get(
+            "/api/prompt-optimizer-settings",
+            self._handle_get_prompt_optimizer_settings,
+        )
+        app.router.add_post(
+            "/api/prompt-optimizer-settings",
+            self._handle_save_prompt_optimizer_settings,
+        )
+        app.router.add_post("/api/optimize-prompt", self._handle_optimize_prompt)
         return app
 
     async def _handle_index(self, _request: web.Request) -> web.Response:
@@ -345,6 +596,43 @@ class WebAdminServer:
         logger.info("[OpenAIImage][web] 删除历史图片 file=%s", removed_name)
         return web.json_response({"deleted": removed_name})
 
+    async def _handle_get_prompt_optimizer_settings(
+        self, request: web.Request
+    ) -> web.Response:
+        """读取网页端提示词优化设置，密钥只返回是否存在。"""
+
+        auth_response = self._require_auth(request)
+        if auth_response is not None:
+            return auth_response
+
+        try:
+            return web.json_response(self.prompt_optimizer_settings.public_payload())
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=500)
+
+    async def _handle_save_prompt_optimizer_settings(
+        self, request: web.Request
+    ) -> web.Response:
+        """保存网页端提示词优化设置。"""
+
+        auth_response = self._require_auth(request)
+        if auth_response is not None:
+            return auth_response
+
+        payload = await request.json()
+        try:
+            saved_payload = self.prompt_optimizer_settings.save_public_payload(payload)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=500)
+
+        logger.info(
+            "[OpenAIImage][web][prompt_optimizer] 设置已保存 model=%s base_url=%s has_api_key=%s",
+            saved_payload["model"] or "-",
+            saved_payload["base_url"] or "-",
+            saved_payload["has_api_key"],
+        )
+        return web.json_response(saved_payload)
+
     async def _handle_generate(self, request: web.Request) -> web.Response:
         """处理网页文生图请求。"""
 
@@ -380,6 +668,42 @@ class WebAdminServer:
             stage_name="web_generate",
         )
         return self._task_response(task_result)
+
+    async def _handle_optimize_prompt(self, request: web.Request) -> web.Response:
+        """处理网页端提示词优化请求。"""
+
+        auth_response = self._require_auth(request)
+        if auth_response is not None:
+            return auth_response
+
+        payload = await request.json()
+        prompt = str(payload.get("prompt", "") or "").strip()
+        mode = _option_text(payload.get("mode"), "generate")
+        if not prompt:
+            return web.json_response({"error": "提示词不能为空"}, status=400)
+
+        try:
+            optimized_prompt = await optimize_prompt_text(
+                settings_store=self.prompt_optimizer_settings,
+                prompt=prompt,
+                mode=mode,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[OpenAIImage][web][prompt_optimizer] 优化失败 mode=%s prompt=%s error=%s",
+                mode,
+                _truncate_log_text(prompt),
+                _truncate_log_text(str(exc)),
+            )
+            return web.json_response({"error": str(exc)}, status=500)
+
+        logger.info(
+            "[OpenAIImage][web][prompt_optimizer] 优化完成 mode=%s before=%s after=%s",
+            mode,
+            _truncate_log_text(prompt),
+            _truncate_log_text(optimized_prompt),
+        )
+        return web.json_response({"prompt": optimized_prompt})
 
     async def _handle_edit(self, request: web.Request) -> web.Response:
         """处理网页图片编辑请求。"""
@@ -828,6 +1152,9 @@ ADMIN_HTML = r"""<!doctype html>
       cursor: not-allowed;
       transform: none;
     }
+    .btn.is-loading .loading-icon {
+      animation: result-spin 800ms linear infinite;
+    }
     .gallery {
       display: grid;
       grid-template-columns: repeat(var(--gallery-column-count, 1), minmax(0, 1fr));
@@ -1078,6 +1405,34 @@ ADMIN_HTML = r"""<!doctype html>
     .prompt-field {
       min-width: 0;
     }
+    .prompt-label-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .prompt-label-row label {
+      margin-bottom: 0;
+    }
+    .prompt-optimize-btn {
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid rgba(65, 116, 201, 0.26);
+      border-radius: 8px;
+      background: #f4f8ff;
+      color: #1f4f9f;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .prompt-optimize-btn svg {
+      width: 15px;
+      height: 15px;
+      stroke-width: 2.2;
+    }
+    .prompt-optimize-btn:hover {
+      background: #eaf1ff;
+      box-shadow: 0 8px 18px rgba(53, 101, 181, 0.12);
+    }
     label {
       display: block;
       margin-bottom: 8px;
@@ -1096,6 +1451,11 @@ ADMIN_HTML = r"""<!doctype html>
       background: #fff;
       color: var(--text);
       line-height: 1.55;
+    }
+    textarea:disabled {
+      background: #f3f7fd;
+      color: #6f7d94;
+      cursor: wait;
     }
     .field-row {
       display: grid;
@@ -1308,6 +1668,16 @@ ADMIN_HTML = r"""<!doctype html>
       font-weight: 700;
       color: var(--text);
     }
+    .settings-form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .settings-form-grid .control {
+      width: 100%;
+      height: 40px;
+      margin-top: 8px;
+    }
     .settings-inline {
       display: flex;
       flex-wrap: wrap;
@@ -1397,10 +1767,12 @@ ADMIN_HTML = r"""<!doctype html>
       .form-grid { grid-template-columns: 1fr; }
       .field-row,
       .edit-options { grid-template-columns: repeat(2, 1fr); }
+      .settings-form-grid { grid-template-columns: 1fr; }
       .workflow-layout { min-height: 0; }
       .action-panel { grid-template-columns: 1fr; }
       .prompt-action-row { grid-template-columns: 1fr; }
       .prompt-action-row .btn { min-height: 46px; flex-direction: row; }
+      .prompt-label-row { flex-wrap: wrap; }
       .result-box { min-height: 360px; }
       .topbar, .section-head { align-items: stretch; flex-direction: column; }
       .status-pill { width: fit-content; }
@@ -1515,7 +1887,13 @@ ADMIN_HTML = r"""<!doctype html>
                   生成图片
                 </button>
                 <div class="prompt-field">
-                  <label for="generatePrompt">提示词</label>
+                  <div class="prompt-label-row">
+                    <label for="generatePrompt">提示词</label>
+                    <button id="generateOptimizePrompt" class="btn prompt-optimize-btn" type="button" data-prompt-target="generatePrompt" data-prompt-mode="generate">
+                      <svg class="nav-icon loading-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="M5.6 5.6l2.1 2.1"/><path d="M16.3 16.3l2.1 2.1"/><path d="M18.4 5.6l-2.1 2.1"/><path d="M7.7 16.3l-2.1 2.1"/></svg>
+                      <span>优化</span>
+                    </button>
+                  </div>
                   <textarea id="generatePrompt" placeholder="例如：浅色自然光下的现代别墅，干净构图，高细节。"></textarea>
                 </div>
               </div>
@@ -1544,7 +1922,13 @@ ADMIN_HTML = r"""<!doctype html>
                   编辑图片
                 </button>
                 <div class="prompt-field">
-                  <label for="editPrompt">提示词</label>
+                  <div class="prompt-label-row">
+                    <label for="editPrompt">提示词</label>
+                    <button id="editOptimizePrompt" class="btn prompt-optimize-btn" type="button" data-prompt-target="editPrompt" data-prompt-mode="edit">
+                      <svg class="nav-icon loading-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="M5.6 5.6l2.1 2.1"/><path d="M16.3 16.3l2.1 2.1"/><path d="M18.4 5.6l-2.1 2.1"/><path d="M7.7 16.3l-2.1 2.1"/></svg>
+                      <span>优化</span>
+                    </button>
+                  </div>
                   <textarea id="editPrompt" placeholder="例如：保留主体构图，改成柔和水彩风格，背景更明亮。"></textarea>
                 </div>
               </div>
@@ -1573,11 +1957,33 @@ ADMIN_HTML = r"""<!doctype html>
       <section id="settingsPanel" class="workspace page-panel hidden">
         <div class="section-head">
           <div>
-            <h1>缓存设置</h1>
-            <p class="muted">图片统一缓存在当前浏览器本地缓存中，图库优先保存缩略图，查看预览后才保存原图。</p>
+            <h1>设置</h1>
+            <p class="muted">管理提示词优化模型和当前浏览器的图库缓存展示方式。</p>
           </div>
         </div>
         <div class="settings-grid">
+          <div class="settings-card">
+            <label>提示词优化模型</label>
+            <div class="settings-form-grid">
+              <div>
+                <label for="promptOptimizerModel">模型名称</label>
+                <input id="promptOptimizerModel" class="control" type="text" placeholder="例如 gpt-5.4-mini">
+              </div>
+              <div>
+                <label for="promptOptimizerBaseUrl">Base URL</label>
+                <input id="promptOptimizerBaseUrl" class="control" type="text" placeholder="例如 https://api.openai.com/v1">
+              </div>
+              <div>
+                <label for="promptOptimizerApiKey">API Key</label>
+                <input id="promptOptimizerApiKey" class="control" type="password" placeholder="留空则保留已保存 Key" autocomplete="off">
+              </div>
+            </div>
+            <div class="settings-actions">
+              <button id="savePromptOptimizerSettingsBtn" class="btn primary" type="button">保存优化设置</button>
+              <span id="promptOptimizerKeyState" class="muted">API Key 未保存</span>
+            </div>
+            <p class="muted">点击生图或编辑页面的“优化”按钮时会调用这里配置的 OpenAI 兼容 Chat Completions 模型。</p>
+          </div>
           <div class="settings-card">
             <label for="galleryPageSizeInput">历史图库每页显示数量</label>
             <div class="settings-inline">
@@ -1729,6 +2135,43 @@ ADMIN_HTML = r"""<!doctype html>
 
     function imageUrl(image) {
       return `${image.url}?v=${image.modified_at}`;
+    }
+
+    async function optimizePrompt(button) {
+      const textarea = $(button.dataset.promptTarget);
+      const prompt = textarea.value.trim();
+      if (!prompt) {
+        showToast("请先输入提示词");
+        textarea.focus();
+        return;
+      }
+
+      const label = button.querySelector("span");
+      const originalLabel = label.textContent;
+      button.disabled = true;
+      textarea.disabled = true;
+      button.classList.add("is-loading");
+      label.textContent = "优化中";
+      try {
+        const data = await apiFetch("/api/optimize-prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            mode: button.dataset.promptMode || "generate",
+          }),
+        });
+        textarea.value = data.prompt || "";
+        showToast("提示词已优化");
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        label.textContent = originalLabel;
+        button.classList.remove("is-loading");
+        textarea.disabled = false;
+        button.disabled = false;
+        textarea.focus();
+      }
     }
 
     // 缩略图和原图必须拆成两个缓存键：图库滚动只保存小图，用户点开预览后才写入原图。
@@ -1905,6 +2348,40 @@ ADMIN_HTML = r"""<!doctype html>
       $("originalCacheInfo").textContent = `${originalRecords.length} 张 / ${formatBytes(originalBytes)}`;
       $("cacheBytes").textContent = formatBytes(totalBytes);
       $("cacheSummary").textContent = `${thumbnailRecords.length} 张缩略图、${originalRecords.length} 张原图，占用 ${formatBytes(totalBytes)}`;
+    }
+
+    function renderPromptOptimizerSettings(settings) {
+      $("promptOptimizerModel").value = settings.model || "";
+      $("promptOptimizerBaseUrl").value = settings.base_url || "";
+      $("promptOptimizerApiKey").value = "";
+      $("promptOptimizerKeyState").textContent = settings.has_api_key ? "API Key 已保存" : "API Key 未保存";
+    }
+
+    async function loadPromptOptimizerSettings() {
+      const settings = await apiFetch("/api/prompt-optimizer-settings");
+      renderPromptOptimizerSettings(settings);
+    }
+
+    async function savePromptOptimizerSettings() {
+      const button = $("savePromptOptimizerSettingsBtn");
+      button.disabled = true;
+      try {
+        const settings = await apiFetch("/api/prompt-optimizer-settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: $("promptOptimizerModel").value,
+            base_url: $("promptOptimizerBaseUrl").value,
+            api_key: $("promptOptimizerApiKey").value,
+          }),
+        });
+        renderPromptOptimizerSettings(settings);
+        showToast("提示词优化设置已保存");
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
     }
 
     function resolveSizeValue(presetId, customId) {
@@ -2321,6 +2798,7 @@ ADMIN_HTML = r"""<!doctype html>
         $("loginMask").classList.add("hidden");
         loadGalleryPageSizeSetting();
         loadGalleryColumnSetting();
+        await loadPromptOptimizerSettings();
         await loadImages();
       } catch (error) {
         showToast(error.message);
@@ -2342,8 +2820,11 @@ ADMIN_HTML = r"""<!doctype html>
     $("saveGalleryPageSizeBtn").addEventListener("click", saveGalleryPageSizeSetting);
     $("galleryColumnMode").addEventListener("change", syncGalleryColumnCountInput);
     $("saveGalleryColumnCountBtn").addEventListener("click", saveGalleryColumnSetting);
+    $("savePromptOptimizerSettingsBtn").addEventListener("click", savePromptOptimizerSettings);
     $("generateSizePreset").addEventListener("change", () => syncCustomSize("generateSizePreset", "generateCustomSize"));
     $("editSizePreset").addEventListener("change", () => syncCustomSize("editSizePreset", "editCustomSize"));
+    $("generateOptimizePrompt").addEventListener("click", () => optimizePrompt($("generateOptimizePrompt")));
+    $("editOptimizePrompt").addEventListener("click", () => optimizePrompt($("editOptimizePrompt")));
     $("editImage").addEventListener("change", () => {
       Array.from($("editImage").files || []).forEach(addReferenceImageFile);
       $("editImage").value = "";
@@ -2445,6 +2926,7 @@ ADMIN_HTML = r"""<!doctype html>
       $("loginMask").classList.add("hidden");
       loadGalleryPageSizeSetting();
       loadGalleryColumnSetting();
+      loadPromptOptimizerSettings().catch((error) => showToast(error.message));
       loadImages().catch(() => $("loginMask").classList.remove("hidden"));
     } else {
       loadGalleryPageSizeSetting();

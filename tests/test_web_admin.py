@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -167,6 +168,81 @@ def test_server_accepts_bearer_or_cookie_token(tmp_path: Path):
     assert server._is_authorized("Bearer token-1", {}) is True
     assert server._is_authorized("", {"openai_image_admin_token": "token-1"}) is True
     assert server._is_authorized("Bearer token-2", {}) is False
+
+
+def test_prompt_optimizer_settings_require_all_fields():
+    module = _load_module()
+
+    with pytest.raises(ValueError, match="模型名称"):
+        module.PromptOptimizerSettings.from_config({})
+
+    with pytest.raises(ValueError, match="Base URL"):
+        module.PromptOptimizerSettings.from_config({"prompt_optimizer_model": "gpt"})
+
+    with pytest.raises(ValueError, match="API Key"):
+        module.PromptOptimizerSettings.from_config(
+            {
+                "prompt_optimizer_model": "gpt",
+                "prompt_optimizer_base_url": "https://api.example.com/v1",
+            }
+        )
+
+
+def test_prompt_optimizer_endpoint_and_response_parser():
+    module = _load_module()
+
+    assert (
+        module._resolve_chat_completions_endpoint("https://api.example.com/v1")
+        == "https://api.example.com/v1/chat/completions"
+    )
+    assert (
+        module._resolve_chat_completions_endpoint(
+            "https://api.example.com/v1/chat/completions"
+        )
+        == "https://api.example.com/v1/chat/completions"
+    )
+    assert (
+        module._extract_optimized_prompt(
+            {"choices": [{"message": {"content": "  优化后的提示词  "}}]}
+        )
+        == "优化后的提示词"
+    )
+
+
+def test_prompt_optimizer_settings_store_saves_web_only_settings(tmp_path: Path):
+    module = _load_module()
+    settings_path = tmp_path / "prompt_optimizer_settings.json"
+    store = module.PromptOptimizerSettingsStore(settings_path)
+
+    saved = store.save_public_payload(
+        {
+            "model": " gpt-test ",
+            "base_url": " https://api.example.com/v1 ",
+            "api_key": " secret-key ",
+        }
+    )
+
+    assert saved == {
+        "model": "gpt-test",
+        "base_url": "https://api.example.com/v1",
+        "has_api_key": True,
+    }
+    assert json.loads(settings_path.read_text(encoding="utf-8")) == {
+        "prompt_optimizer_model": "gpt-test",
+        "prompt_optimizer_base_url": "https://api.example.com/v1",
+        "prompt_optimizer_api_key": "secret-key",
+    }
+
+    saved_without_key = store.save_public_payload(
+        {
+            "model": "gpt-next",
+            "base_url": "https://api.next.example.com/v1",
+            "api_key": "",
+        }
+    )
+
+    assert saved_without_key["has_api_key"] is True
+    assert store.load()["prompt_optimizer_api_key"] == "secret-key"
 
 
 def test_web_admin_logs_request_with_safe_prompt_summary(
@@ -431,6 +507,113 @@ async def test_edit_handler_accepts_multiple_reference_images(tmp_path: Path):
     ]
 
 
+@pytest.mark.asyncio
+async def test_optimize_prompt_handler_returns_optimized_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    module = _load_module()
+    settings_path = tmp_path / "prompt_optimizer_settings.json"
+
+    async def fake_optimize_prompt_text(*, settings_store, prompt, mode):
+        assert settings_store.settings_path == settings_path
+        assert prompt == "浅色自然光下的现代别墅"
+        assert mode == "generate"
+        return "浅色自然光下的现代别墅，广角构图，高细节材质"
+
+    monkeypatch.setattr(module, "optimize_prompt_text", fake_optimize_prompt_text)
+    server = module.WebAdminServer(
+        plugin=SimpleNamespace(),
+        settings=module.WebAdminSettings(
+            enabled=True,
+            host="127.0.0.1",
+            port=7865,
+            password="secret",
+        ),
+        cache_dir=tmp_path,
+    )
+    server.prompt_optimizer_settings = module.PromptOptimizerSettingsStore(
+        settings_path
+    )
+    server._tokens.add("token-1")
+    app = server._create_app()
+    runner = module.web.AppRunner(app)
+    await runner.setup()
+    site = module.web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    try:
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{port}/api/optimize-prompt",
+                json={"prompt": "浅色自然光下的现代别墅", "mode": "generate"},
+                headers={"Authorization": "Bearer token-1"},
+            ) as response:
+                assert response.status == 200
+                assert await response.json() == {
+                    "prompt": "浅色自然光下的现代别墅，广角构图，高细节材质"
+                }
+    finally:
+        await runner.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_prompt_optimizer_settings_handlers_save_web_settings(tmp_path: Path):
+    module = _load_module()
+    settings_path = tmp_path / "prompt_optimizer_settings.json"
+    server = module.WebAdminServer(
+        plugin=SimpleNamespace(),
+        settings=module.WebAdminSettings(
+            enabled=True,
+            host="127.0.0.1",
+            port=7865,
+            password="secret",
+        ),
+        cache_dir=tmp_path,
+    )
+    server.prompt_optimizer_settings = module.PromptOptimizerSettingsStore(
+        settings_path
+    )
+    server._tokens.add("token-1")
+    app = server._create_app()
+    runner = module.web.AppRunner(app)
+    await runner.setup()
+    site = module.web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    try:
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{port}/api/prompt-optimizer-settings",
+                json={
+                    "model": "gpt-test",
+                    "base_url": "https://api.example.com/v1",
+                    "api_key": "secret-key",
+                },
+                headers={"Authorization": "Bearer token-1"},
+            ) as response:
+                assert response.status == 200
+                assert await response.json() == {
+                    "model": "gpt-test",
+                    "base_url": "https://api.example.com/v1",
+                    "has_api_key": True,
+                }
+
+            async with session.get(
+                f"http://127.0.0.1:{port}/api/prompt-optimizer-settings",
+                headers={"Authorization": "Bearer token-1"},
+            ) as response:
+                assert response.status == 200
+                data = await response.json()
+                assert data["has_api_key"] is True
+                assert "api_key" not in data
+    finally:
+        await runner.cleanup()
+
+
 def test_admin_html_escapes_image_names_and_avoids_url_tokens():
     module = _load_module()
 
@@ -481,22 +664,29 @@ def test_admin_html_preview_actions_match_requested_gallery_flow():
 def test_admin_html_gallery_uses_responsive_masonry_without_cropping_images():
     module = _load_module()
     gallery_rule = re.search(r"\.gallery\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
+    gallery_column_rule = re.search(
+        r"\.gallery-column\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML
+    )
     image_card_rule = re.search(r"\.image-card\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
     thumb_rule = re.search(r"\.thumb\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
 
     assert gallery_rule is not None
+    assert gallery_column_rule is not None
     assert image_card_rule is not None
     assert thumb_rule is not None
     gallery_body = gallery_rule.group("body")
+    gallery_column_body = gallery_column_rule.group("body")
     image_card_body = image_card_rule.group("body")
     thumb_body = thumb_rule.group("body")
-    assert "column-width: 220px;" in gallery_body
-    assert ".gallery.fixed-columns" in module.ADMIN_HTML
-    assert "column-count: var(--gallery-column-count, 4);" in module.ADMIN_HTML
-    assert "column-gap: 14px;" in gallery_body
+    assert "display: grid;" in gallery_body
+    assert "grid-template-columns: repeat(var(--gallery-column-count, 1), minmax(0, 1fr));" in gallery_body
+    assert "gap: 14px;" in gallery_body
+    assert "display: flex;" in gallery_column_body
+    assert "flex-direction: column;" in gallery_column_body
+    assert "function distributeImagesByRows(images)" in module.ADMIN_HTML
     assert "gallery-empty" in module.ADMIN_HTML
-    assert "display: inline-block;" in image_card_body
-    assert "break-inside: avoid;" in image_card_body
+    assert "display: block;" in image_card_body
+    assert "width: 100%;" in image_card_body
     assert "grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));" not in module.ADMIN_HTML
     assert "height: auto;" in thumb_body
     assert "object-fit: contain;" in thumb_body
@@ -543,8 +733,8 @@ def test_admin_html_gallery_supports_custom_column_count_setting():
     assert "const MAX_GALLERY_COLUMN_COUNT = 8;" in module.ADMIN_HTML
     assert "function clampGalleryColumnCount(value)" in module.ADMIN_HTML
     assert "function applyGalleryColumnSetting()" in module.ADMIN_HTML
-    assert 'gallery.classList.toggle("fixed-columns", useFixedColumns);' in module.ADMIN_HTML
-    assert 'gallery.style.setProperty("--gallery-column-count", String(state.galleryColumnCount));' in module.ADMIN_HTML
+    assert 'gallery.style.setProperty("--gallery-column-count", String(resolveGalleryColumnCount()));' in module.ADMIN_HTML
+    assert "if (state.galleryColumnMode === \"fixed\") return state.galleryColumnCount;" in module.ADMIN_HTML
     assert "function saveGalleryColumnSetting()" in module.ADMIN_HTML
     assert "function syncGalleryColumnCountInput()" in module.ADMIN_HTML
     assert "loadGalleryColumnSetting();" in module.ADMIN_HTML
@@ -633,8 +823,32 @@ def test_admin_html_edit_panel_keeps_prompt_controls_top_aligned():
 
     assert "align-items: start;" in module.ADMIN_HTML
     assert "align-content: start;" in module.ADMIN_HTML
+    assert "class=\"prompt-label-row\"" in module.ADMIN_HTML
     assert "<label for=\"editPrompt\">提示词</label>" in module.ADMIN_HTML
+    assert "id=\"editOptimizePrompt\"" in module.ADMIN_HTML
+    assert "data-prompt-target=\"editPrompt\"" in module.ADMIN_HTML
     assert "编辑提示词" not in module.ADMIN_HTML
+
+
+def test_admin_html_supports_prompt_optimizer_buttons():
+    module = _load_module()
+
+    assert "id=\"promptOptimizerModel\"" in module.ADMIN_HTML
+    assert "id=\"promptOptimizerBaseUrl\"" in module.ADMIN_HTML
+    assert "id=\"promptOptimizerApiKey\"" in module.ADMIN_HTML
+    assert "id=\"savePromptOptimizerSettingsBtn\"" in module.ADMIN_HTML
+    assert "api_key: $(\"promptOptimizerApiKey\").value" in module.ADMIN_HTML
+    assert "loadPromptOptimizerSettings" in module.ADMIN_HTML
+    assert "savePromptOptimizerSettings" in module.ADMIN_HTML
+    assert "id=\"generateOptimizePrompt\"" in module.ADMIN_HTML
+    assert "id=\"editOptimizePrompt\"" in module.ADMIN_HTML
+    assert "<label for=\"generatePrompt\">提示词</label>" in module.ADMIN_HTML
+    assert "data-prompt-mode=\"generate\"" in module.ADMIN_HTML
+    assert "data-prompt-mode=\"edit\"" in module.ADMIN_HTML
+    assert "async function optimizePrompt(button)" in module.ADMIN_HTML
+    assert 'apiFetch("/api/optimize-prompt"' in module.ADMIN_HTML
+    assert "textarea.disabled = true;" in module.ADMIN_HTML
+    assert "button.classList.add(\"is-loading\");" in module.ADMIN_HTML
 
 
 def test_admin_html_uses_browser_local_image_cache_and_settings():
