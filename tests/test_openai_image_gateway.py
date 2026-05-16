@@ -70,11 +70,19 @@ class _FakeSession:
         self.payloads_by_endpoint = payloads_by_endpoint
         self.called_endpoints: list[str] = []
         self.recorded_payloads: list[dict] = []
+        self.recorded_proxies: list[str | None] = []
         self.closed = False
 
-    def post(self, endpoint: str, json: dict, headers: dict):
+    def post(
+        self,
+        endpoint: str,
+        json: dict,
+        headers: dict,
+        proxy: str | None = None,
+    ):
         self.called_endpoints.append(endpoint)
         self.recorded_payloads.append(json)
+        self.recorded_proxies.append(proxy)
         return _FakeResponse(self.payloads_by_endpoint[endpoint])
 
 
@@ -84,12 +92,14 @@ class _FakeMultipartSession:
         self.called_endpoints: list[str] = []
         self.recorded_data = []
         self.recorded_headers: list[dict] = []
+        self.recorded_proxies: list[str | None] = []
         self.closed = False
 
-    def post(self, endpoint: str, data, headers: dict):
+    def post(self, endpoint: str, data, headers: dict, proxy: str | None = None):
         self.called_endpoints.append(endpoint)
         self.recorded_data.append(data)
         self.recorded_headers.append(headers)
+        self.recorded_proxies.append(proxy)
         return _FakeResponse(self.payloads_by_endpoint[endpoint])
 
 
@@ -118,6 +128,7 @@ async def test_gateway_posts_json_payload_to_responses_endpoint():
 
     assert result["output"][0]["result"] == "aGVsbG8="
     assert session.called_endpoints == ["https://cdn.jucode.top/v1/responses"]
+    assert session.recorded_proxies == [None]
 
 
 @pytest.mark.asyncio
@@ -151,6 +162,34 @@ async def test_gateway_posts_json_payload_to_images_generations_endpoint():
     assert session.recorded_payloads == [
         {"model": "gpt-image-2", "prompt": "生成一只猫"}
     ]
+    assert session.recorded_proxies == [None]
+
+
+@pytest.mark.asyncio
+async def test_gateway_passes_proxy_to_json_image_request():
+    module = _load_module()
+    session = _FakeSession(
+        {
+            "https://cdn.jucode.top/v1/responses": {
+                "output": [
+                    {
+                        "type": "image_generation_call",
+                        "result": "aGVsbG8=",
+                    }
+                ]
+            },
+        }
+    )
+    gateway = module.OpenAIImageGateway(
+        base_url="https://cdn.jucode.top/v1",
+        api_key="demo-key",
+        proxy_url=" http://127.0.0.1:7890 ",
+        session=session,
+    )
+
+    await gateway.request_response({"model": "demo", "input": "draw a cat"})
+
+    assert session.recorded_proxies == ["http://127.0.0.1:7890"]
 
 
 @pytest.mark.asyncio
@@ -188,6 +227,7 @@ async def test_gateway_posts_multipart_payload_to_images_edits_endpoint():
     assert result["data"][0]["b64_json"] == "aGVsbG8="
     assert session.called_endpoints == ["https://cdn.jucode.top/v1/images/edits"]
     assert session.recorded_headers == [{"Authorization": "Bearer demo-key"}]
+    assert session.recorded_proxies == [None]
     fields = list(session.recorded_data[0]._fields)
     assert [field[0]["name"] for field in fields] == [
         "model",
@@ -203,6 +243,39 @@ async def test_gateway_posts_multipart_payload_to_images_edits_endpoint():
     assert fields[3][2] == b"first"
     assert fields[4][0]["filename"] == "second.jpg"
     assert fields[4][2] == b"second"
+
+
+@pytest.mark.asyncio
+async def test_gateway_passes_proxy_to_multipart_image_request():
+    module = _load_module()
+    session = _FakeMultipartSession(
+        {
+            "https://cdn.jucode.top/v1/images/edits": {
+                "data": [
+                    {
+                        "b64_json": "aGVsbG8=",
+                    }
+                ]
+            },
+        }
+    )
+    gateway = module.OpenAIImageGateway(
+        base_url="https://cdn.jucode.top/v1",
+        api_key="demo-key",
+        proxy_url="http://127.0.0.1:7890",
+        session=session,
+    )
+
+    await gateway.request_image_edit(
+        data={
+            "model": "gpt-image-2",
+            "prompt": "将图中的角色换成星见雅",
+            "response_format": "b64_json",
+        },
+        files=[("first.png", b"first", "image/png")],
+    )
+
+    assert session.recorded_proxies == ["http://127.0.0.1:7890"]
 
 
 @pytest.mark.asyncio

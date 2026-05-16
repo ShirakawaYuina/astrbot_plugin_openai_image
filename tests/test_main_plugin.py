@@ -76,6 +76,30 @@ def test_rebuild_runtime_dependencies_uses_dropdown_selected_provider():
     assert active_provider.api_key == "primary-key"
 
 
+def test_rebuild_runtime_dependencies_passes_image_proxy_to_gateway():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "image_providers": [
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "default",
+                    "name": "默认供应商",
+                    "base_url": "https://example.com/v1",
+                    "api_key": "demo-key",
+                }
+            ],
+            "image_proxy_url": " http://127.0.0.1:7890 ",
+        },
+    )
+
+    plugin._rebuild_runtime_dependencies()
+
+    assert plugin._image_gateway is not None
+    assert plugin._image_gateway._proxy_url == "http://127.0.0.1:7890"
+
+
 def test_rebuild_runtime_dependencies_prepares_web_admin_server():
     module = _load_module()
     plugin = module.OpenAIImagePlugin(

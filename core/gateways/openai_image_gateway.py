@@ -63,6 +63,7 @@ class OpenAIImageGateway:
         base_url: str,
         api_key: str,
         timeout_seconds: int = 120,
+        proxy_url: str = "",
         session: aiohttp.ClientSession | None = None,
     ) -> None:
         self._endpoint_candidates = resolve_endpoint_candidates(base_url)
@@ -72,6 +73,8 @@ class OpenAIImageGateway:
         self._images_edits_endpoint = resolve_images_edits_endpoint(base_url)
         self._api_key = str(api_key or "").strip()
         self._timeout_seconds = max(5, int(timeout_seconds))
+        # 代理只在真正访问图片接口的请求上下文中传入，避免影响网页后台、图库读取或其它 HTTP 调用。
+        self._proxy_url = str(proxy_url or "").strip() or None
         self._session = session
         self._owned_session: aiohttp.ClientSession | None = None
 
@@ -153,7 +156,10 @@ class OpenAIImageGateway:
         session = await self._get_session()
         try:
             async with session.post(
-                endpoint, json=payload, headers=headers
+                endpoint,
+                json=payload,
+                headers=headers,
+                proxy=self._proxy_url,
             ) as response:
                 response.raise_for_status()
                 return await response.json()
@@ -184,7 +190,12 @@ class OpenAIImageGateway:
 
         session = await self._get_session()
         try:
-            async with session.post(endpoint, data=form, headers=headers) as response:
+            async with session.post(
+                endpoint,
+                data=form,
+                headers=headers,
+                proxy=self._proxy_url,
+            ) as response:
                 response.raise_for_status()
                 return await response.json()
         except Exception as exc:  # noqa: BLE001

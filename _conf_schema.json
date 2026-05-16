@@ -123,6 +123,12 @@
         "default": "",
         "hint": "仅 image_send_mode=url 时生效。留空时使用 AstrBot 全局 callback_api_base；两个容器分离时请填写 NapCat 容器可访问的 AstrBot 地址，例如 http://astrbot:6185。"
     },
+    "image_proxy_url": {
+        "description": "图片接口代理地址",
+        "type": "string",
+        "default": "",
+        "hint": "仅在请求 OpenAI 兼容图片接口并读取响应时生效，例如 http://127.0.0.1:7890。留空则不使用显式代理，不影响网页后台、图库读取、图片回传或提示词优化接口。"
+    },
     "request_timeout_seconds": {
         "description": "图片请求超时秒数",
         "type": "int",

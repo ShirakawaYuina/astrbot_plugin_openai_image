@@ -78,6 +78,8 @@ def test_config_schema_replaces_base_url_and_api_key_with_provider_list():
     assert "default" in schema["active_provider_id"]["options"]
     assert schema["image_providers"]["type"] == "template_list"
     assert "openai_compatible" in schema["image_providers"]["templates"]
+    assert schema["image_proxy_url"]["type"] == "string"
+    assert "图片接口" in schema["image_proxy_url"]["description"]
     assert "prompt_optimizer_model" not in schema
     assert "prompt_optimizer_base_url" not in schema
     assert "prompt_optimizer_api_key" not in schema
