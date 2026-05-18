@@ -762,15 +762,21 @@ def test_admin_html_supports_paste_reference_image_preview():
     assert "paste-zone" not in module.ADMIN_HTML
 
 
-def test_admin_html_places_workspace_result_above_action_panel():
+def test_admin_html_places_vertical_action_panel_beside_workspace_result():
     module = _load_module()
 
     assert "class=\"workflow-layout\"" in module.ADMIN_HTML
     assert "class=\"workspace-result-panel\"" in module.ADMIN_HTML
     assert "class=\"action-panel\"" in module.ADMIN_HTML
-    assert "grid-template-rows: minmax(360px, 1fr) auto;" in module.ADMIN_HTML
+    assert (
+        "grid-template-columns: minmax(280px, 320px) minmax(520px, 1fr);"
+        in module.ADMIN_HTML
+    )
     assert "min-height: calc(100vh - 190px);" in module.ADMIN_HTML
-    assert 'id="generateForm" class="action-panel action-panel-single compact-control-panel"' in module.ADMIN_HTML
+    assert 'id="generateForm" class="action-panel compact-control-panel"' in module.ADMIN_HTML
+    assert "action-panel-single" not in module.ADMIN_HTML
+    assert "grid-template-columns: 1fr;" in module.ADMIN_HTML
+    assert "min-height: calc(100vh - 226px);" in module.ADMIN_HTML
     assert "id=\"generateResultBox\"" in module.ADMIN_HTML
     assert "id=\"editResultBox\"" in module.ADMIN_HTML
     assert "class=\"result-label\"" in module.ADMIN_HTML

@@ -1276,9 +1276,11 @@ ADMIN_HTML = r"""<!doctype html>
       color: var(--primary);
       box-shadow: 0 8px 18px rgba(48, 76, 126, 0.09);
     }
+    /* 生图/编辑工作区固定为左侧竖向操作栏、右侧结果预览，贴近桌面端持续创作流程。 */
     .workflow-layout {
       display: grid;
-      grid-template-rows: minmax(360px, 1fr) auto;
+      grid-template-columns: minmax(280px, 320px) minmax(520px, 1fr);
+      align-items: stretch;
       min-height: calc(100vh - 190px);
       gap: 14px;
     }
@@ -1303,7 +1305,7 @@ ADMIN_HTML = r"""<!doctype html>
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-items: stretch;
       gap: 12px;
-      min-height: clamp(360px, 64vh, 680px);
+      min-height: calc(100vh - 226px);
       padding: 14px;
       border: 1px dashed var(--line-strong);
       border-radius: 12px;
@@ -1371,17 +1373,14 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .action-panel {
       display: grid;
-      grid-template-columns: minmax(280px, 1fr) 300px;
-      align-self: end;
+      grid-template-columns: 1fr;
+      align-self: stretch;
       align-items: start;
       gap: 14px;
       padding: 14px;
       border: 1px solid var(--line);
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.68);
-    }
-    .action-panel-single {
-      grid-template-columns: 1fr;
     }
     .control-stack {
       display: grid;
@@ -1390,15 +1389,15 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .prompt-action-row {
       display: grid;
-      grid-template-columns: 136px minmax(0, 1fr);
-      align-items: end;
+      grid-template-columns: 1fr;
+      align-items: stretch;
       gap: 12px;
     }
     .prompt-action-row > .btn {
       width: 100%;
-      min-height: 86px;
-      flex-direction: column;
-      align-self: end;
+      min-height: 54px;
+      flex-direction: row;
+      align-self: stretch;
     }
     .prompt-field {
       min-width: 0;
@@ -1464,13 +1463,13 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .field-row {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: 1fr;
       gap: 10px;
       margin-top: 12px;
     }
     .field-row .control { width: 100%; height: 40px; }
     .edit-options {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: 1fr;
     }
     .custom-size { margin-top: 10px; }
     .reference-panel {
@@ -1769,14 +1768,7 @@ ADMIN_HTML = r"""<!doctype html>
       .main, .preview { padding: 16px; border: 0; }
       .preview { position: static; height: auto; overflow-x: hidden; overflow-y: visible; }
       .form-grid { grid-template-columns: 1fr; }
-      .field-row,
-      .edit-options { grid-template-columns: repeat(2, 1fr); }
       .settings-form-grid { grid-template-columns: 1fr; }
-      .workflow-layout { min-height: 0; }
-      .action-panel { grid-template-columns: 1fr; }
-      .prompt-action-row { grid-template-columns: 1fr; }
-      .prompt-action-row > .btn { min-height: 46px; flex-direction: row; }
-      .result-box { min-height: 360px; }
       .topbar, .section-head { align-items: stretch; flex-direction: column; }
       .status-pill { width: fit-content; }
     }
@@ -1878,11 +1870,7 @@ ADMIN_HTML = r"""<!doctype html>
 
       <section id="generatePanel" class="workspace page-panel hidden">
         <div class="workflow-layout">
-          <div class="workspace-result-panel">
-            <div class="result-label">结果预览</div>
-            <div id="generateResultBox" class="result-box result-state-empty">暂无结果</div>
-          </div>
-          <form id="generateForm" class="action-panel action-panel-single compact-control-panel">
+          <form id="generateForm" class="action-panel compact-control-panel">
             <div class="control-stack">
               <div class="prompt-action-row">
                 <button id="generateSubmit" class="btn primary" type="submit">
@@ -1908,15 +1896,15 @@ ADMIN_HTML = r"""<!doctype html>
               </div>
             </div>
           </form>
+          <div class="workspace-result-panel">
+            <div class="result-label">结果预览</div>
+            <div id="generateResultBox" class="result-box result-state-empty">暂无结果</div>
+          </div>
         </div>
       </section>
 
       <section id="editPanel" class="workspace page-panel hidden">
         <div class="workflow-layout">
-          <div class="workspace-result-panel">
-            <div class="result-label">结果预览</div>
-            <div id="editResultBox" class="result-box result-state-empty">暂无结果</div>
-          </div>
           <form id="editForm" class="action-panel">
             <div class="control-stack">
               <div class="prompt-action-row">
@@ -1954,6 +1942,10 @@ ADMIN_HTML = r"""<!doctype html>
               <div id="referenceThumbs" class="reference-thumbs"></div>
             </div>
           </form>
+          <div class="workspace-result-panel">
+            <div class="result-label">结果预览</div>
+            <div id="editResultBox" class="result-box result-state-empty">暂无结果</div>
+          </div>
         </div>
       </section>
 
