@@ -6,7 +6,6 @@ from __future__ import annotations
 def build_generate_payload(
     model: str,
     prompt: str,
-    negative_prompt: str = "",
     size: str | None = None,
     quality: str = "auto",
     moderation: str = "low",
@@ -21,7 +20,7 @@ def build_generate_payload(
     )
     return {
         "model": model,
-        "input": merge_negative_prompt(prompt, negative_prompt),
+        "input": str(prompt or "").strip(),
         "tools": [image_tool],
         "tool_choice": {"type": "image_generation"},
     }
@@ -30,7 +29,6 @@ def build_generate_payload(
 def build_images_generate_payload(
     model: str,
     prompt: str,
-    negative_prompt: str = "",
     size: str | None = None,
     quality: str = "auto",
     moderation: str = "low",
@@ -39,7 +37,7 @@ def build_images_generate_payload(
 
     payload = {
         "model": model,
-        "prompt": merge_negative_prompt(prompt, negative_prompt),
+        "prompt": str(prompt or "").strip(),
     }
     _append_size_if_configured(payload, size)
     _append_image_options(payload, quality=quality, moderation=moderation)
@@ -51,7 +49,6 @@ def build_edit_payload(
     prompt: str,
     data_url: str = "",
     data_urls: list[str] | None = None,
-    negative_prompt: str = "",
     size: str | None = None,
     quality: str = "auto",
     moderation: str = "low",
@@ -68,7 +65,7 @@ def build_edit_payload(
     content_blocks = [
         {
             "type": "input_text",
-            "text": merge_negative_prompt(prompt, negative_prompt),
+            "text": str(prompt or "").strip(),
         },
     ]
     content_blocks.extend(
@@ -90,16 +87,6 @@ def build_edit_payload(
         "tools": [image_tool],
         "tool_choice": {"type": "image_generation"},
     }
-
-
-def merge_negative_prompt(prompt: str, negative_prompt: str = "") -> str:
-    """将全局负面提示词追加到用户提示词后，留空时保持原文不变。"""
-
-    clean_prompt = str(prompt or "").strip()
-    clean_negative_prompt = str(negative_prompt or "").strip()
-    if not clean_negative_prompt:
-        return clean_prompt
-    return f"{clean_prompt}\n\nMust Avoid: {clean_negative_prompt}"
 
 
 def _normalize_image_urls(

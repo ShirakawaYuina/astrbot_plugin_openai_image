@@ -294,7 +294,6 @@ def create_generation_job(
         return await plugin._generate_service.generate(
             model=plugin._get_configured_model(),
             prompt=prompt,
-            negative_prompt=plugin._get_negative_prompt(),
             endpoint_type=plugin._get_endpoint_type(),
             size=plugin._resolve_output_size(size),
             quality=quality,
@@ -327,7 +326,6 @@ def create_edit_job(
             model=plugin._get_configured_model(),
             prompt=prompt,
             **image_kwargs,
-            negative_prompt=plugin._get_negative_prompt(),
             endpoint_type=plugin._get_endpoint_type(),
             size=plugin._resolve_output_size(size),
             quality=quality,

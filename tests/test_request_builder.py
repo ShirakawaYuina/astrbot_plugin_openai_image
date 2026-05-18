@@ -55,18 +55,6 @@ def test_build_images_generate_payload_uses_images_endpoint_schema():
     }
 
 
-def test_build_generate_payload_appends_negative_prompt_when_configured():
-    module = _load_module()
-
-    payload = module.build_generate_payload(
-        model="gpt-image-2",
-        prompt="生成一只猫",
-        negative_prompt="低清晰度、文字水印",
-    )
-
-    assert payload["input"] == "生成一只猫\n\nMust Avoid: 低清晰度、文字水印"
-
-
 def test_build_generate_payload_adds_size_to_responses_tool_when_configured():
     module = _load_module()
 
@@ -199,23 +187,6 @@ def test_build_edit_payload_accepts_multiple_input_images():
             "image_url": "data:image/jpeg;base64,c2Vjb25k",
         },
     ]
-
-
-def test_build_edit_payload_appends_negative_prompt_to_text_block():
-    module = _load_module()
-
-    payload = module.build_edit_payload(
-        model="gpt-image-2",
-        prompt="改成动漫风格",
-        data_url="data:image/png;base64,aGVsbG8=",
-        negative_prompt="低清晰度、文字水印",
-    )
-
-    text_block = payload["input"][0]["content"][0]
-    assert text_block == {
-        "type": "input_text",
-        "text": "改成动漫风格\n\nMust Avoid: 低清晰度、文字水印",
-    }
 
 
 def test_build_edit_payload_adds_size_to_responses_tool_when_configured():

@@ -592,49 +592,6 @@ async def test_execute_edit_flow_no_longer_sends_pending_message_directly():
 
 
 @pytest.mark.asyncio
-async def test_execute_generate_flow_passes_configured_negative_prompt():
-    module = _load_module()
-    plugin = module.OpenAIImagePlugin(
-        context=SimpleNamespace(),
-        config={"negative_prompt": "  低清晰度、文字水印  "},
-    )
-    plugin._image_gateway = object()
-    plugin._generate_service = SimpleNamespace(
-        generate=AsyncMock(return_value=Path("generated.png"))
-    )
-    plugin._task_service = SimpleNamespace()
-
-    async def _run_task(**kwargs):
-        result_path = await kwargs["job_coro"]()
-        return {"success": True, "payload": str(result_path), "timings": {}}
-
-    plugin._task_service.run_task = AsyncMock(side_effect=_run_task)
-    plugin._finalize_results = AsyncMock(
-        return_value={
-            "status": "success",
-            "summary": "已生成 1 张图片",
-        }
-    )
-
-    await plugin._execute_generate_flow(
-        event=_make_event(),
-        prompt="生成一只猫",
-        count=1,
-        send_user_message=False,
-    )
-
-    plugin._generate_service.generate.assert_awaited_once_with(
-        model="gpt-5.4-mini",
-        prompt="生成一只猫",
-        negative_prompt="低清晰度、文字水印",
-        endpoint_type="responses",
-        size=None,
-        quality="auto",
-        moderation="low",
-    )
-
-
-@pytest.mark.asyncio
 async def test_execute_generate_flow_uses_images_default_model_when_configured():
     module = _load_module()
     plugin = module.OpenAIImagePlugin(
@@ -669,7 +626,6 @@ async def test_execute_generate_flow_uses_images_default_model_when_configured()
     plugin._generate_service.generate.assert_awaited_once_with(
         model="gpt-image-2",
         prompt="生成一只猫",
-        negative_prompt="",
         endpoint_type="images",
         size=None,
         quality="auto",
@@ -713,7 +669,6 @@ async def test_execute_generate_flow_passes_command_size_override():
     plugin._generate_service.generate.assert_awaited_once_with(
         model="gpt-5.4-mini",
         prompt="生成一只猫",
-        negative_prompt="",
         endpoint_type="responses",
         size="1024x1536",
         quality="auto",
@@ -755,7 +710,6 @@ async def test_execute_generate_flow_passes_quality_and_moderation_override():
     plugin._generate_service.generate.assert_awaited_once_with(
         model="gpt-5.4-mini",
         prompt="生成一只猫",
-        negative_prompt="",
         endpoint_type="responses",
         size=None,
         quality="high",
@@ -860,7 +814,6 @@ async def test_run_edit_jobs_uses_images_default_model_when_configured():
         model="gpt-image-2",
         prompt="改成星见雅",
         data_urls=["data:image/png;base64,ZmFrZQ=="],
-        negative_prompt="",
         endpoint_type="images",
         size=None,
         quality="auto",

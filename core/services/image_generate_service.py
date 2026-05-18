@@ -26,7 +26,6 @@ class ImageGenerateService:
         self,
         model: str,
         prompt: str,
-        negative_prompt: str = "",
         endpoint_type: str = "responses",
         size: str | None = None,
         quality: str = "auto",
@@ -39,7 +38,6 @@ class ImageGenerateService:
             payload = build_images_generate_payload(
                 model=model,
                 prompt=prompt,
-                negative_prompt=negative_prompt,
                 size=size,
                 quality=quality,
                 moderation=moderation,
@@ -50,7 +48,6 @@ class ImageGenerateService:
             payload = build_generate_payload(
                 model=model,
                 prompt=prompt,
-                negative_prompt=negative_prompt,
                 size=size,
                 quality=quality,
                 moderation=moderation,

@@ -102,12 +102,6 @@
         ],
         "hint": "responses 使用 /v1/responses；images 文生图使用 /v1/images/generations，图片编辑使用 /v1/images/edits。"
     },
-    "negative_prompt": {
-        "description": "负面提示词",
-        "type": "string",
-        "default": "",
-        "hint": "可填写不希望出现在图片中的内容，例如低清晰度、文字水印、畸形手等。留空时不会修改原始提示词。"
-    },
     "image_size": {
         "description": "默认输出图片尺寸",
         "type": "string",

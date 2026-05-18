@@ -447,7 +447,6 @@ async def test_edit_handler_accepts_multiple_reference_images(tmp_path: Path):
         _task_service=FakeTaskService(),
         _ensure_ready=lambda: None,
         _get_configured_model=lambda: "gpt-image-test",
-        _get_negative_prompt=lambda: "",
         _get_endpoint_type=lambda: "responses",
         _resolve_output_size=lambda size: size,
     )
@@ -1014,7 +1013,6 @@ async def test_create_generation_job_uses_plugin_generate_service(tmp_path: Path
     plugin = SimpleNamespace(
         _generate_service=FakeGenerateService(),
         _get_configured_model=lambda: "gpt-image-test",
-        _get_negative_prompt=lambda: "低清晰度",
         _get_endpoint_type=lambda: "images",
         _resolve_output_size=lambda size: size,
     )
@@ -1032,7 +1030,6 @@ async def test_create_generation_job_uses_plugin_generate_service(tmp_path: Path
     assert plugin._generate_service.kwargs == {
         "model": "gpt-image-test",
         "prompt": "生成一张湖边小屋",
-        "negative_prompt": "低清晰度",
         "endpoint_type": "images",
         "size": "1024x1024",
         "quality": "high",
@@ -1053,7 +1050,6 @@ async def test_create_edit_job_uses_plugin_edit_service(tmp_path: Path):
     plugin = SimpleNamespace(
         _edit_service=FakeEditService(),
         _get_configured_model=lambda: "gpt-image-test",
-        _get_negative_prompt=lambda: "低清晰度",
         _get_endpoint_type=lambda: "responses",
         _resolve_output_size=lambda size: size,
     )
@@ -1079,7 +1075,6 @@ async def test_create_edit_job_uses_plugin_edit_service(tmp_path: Path):
             "data:image/png;base64,aGVsbG8=",
             "data:image/png;base64,d29ybGQ=",
         ],
-        "negative_prompt": "低清晰度",
         "endpoint_type": "responses",
         "size": "auto",
         "quality": "medium",

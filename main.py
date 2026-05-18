@@ -50,7 +50,7 @@ FIGURE_IMAGE_FILE_NAME = "robot_figure.png"
     PLUGIN_NAME,
     "Codex",
     "基于 OpenAI 兼容 chat/completions 接口的图片生成与图片编辑插件。",
-    "0.6.40",
+    "0.6.41",
 )
 class OpenAIImagePlugin(Star):
     """OpenAI 图片插件。"""
@@ -693,7 +693,6 @@ class OpenAIImagePlugin(Star):
                 job_coro=lambda: self._generate_service.generate(
                     model=self._get_configured_model(),
                     prompt=prompt,
-                    negative_prompt=self._get_negative_prompt(),
                     endpoint_type=self._get_endpoint_type(),
                     size=size,
                     quality=quality,
@@ -742,7 +741,6 @@ class OpenAIImagePlugin(Star):
                     model=self._get_configured_model(),
                     prompt=prompt,
                     data_urls=data_urls,
-                    negative_prompt=self._get_negative_prompt(),
                     endpoint_type=self._get_endpoint_type(),
                     size=size,
                     quality=quality,
@@ -1077,11 +1075,6 @@ class OpenAIImagePlugin(Star):
             # initialize 日志可能在依赖重建后读取该对象；这里保留兜底，防止测试或热重载流程绕过重建。
             self._active_image_provider = resolve_active_image_provider(self.config)
         return self._active_image_provider
-
-    def _get_negative_prompt(self) -> str:
-        """读取全局负面提示词配置，统一去除首尾空白避免污染请求体。"""
-
-        return str(self.config.get("negative_prompt", "") or "").strip()
 
     def _resolve_output_size(self, command_size: str | None = None) -> str | None:
         """解析本次请求尺寸，命令参数优先，配置默认值作为兜底。"""

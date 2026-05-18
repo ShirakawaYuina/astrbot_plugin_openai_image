@@ -34,7 +34,6 @@
 - 支持配置图片接口 `base_url`
 - 支持配置图片模型 `model`
 - 支持配置图片接口认证 `api_key`
-- 支持配置全局负面提示词
 - 支持文本生成图片
 - 支持图片编辑
 - 支持编辑命令从“同条消息附图”或“回复/引用图片消息”两种方式读取输入图片
@@ -257,7 +256,6 @@ data/plugins/astrbot_plugin_openai_image/
 | `base_url` | string | `https://api.jucode.cn/pg/chat/completions` | 图片接口地址 |
 | `api_key` | string | `""` | 图片接口密钥 |
 | `model` | string | `gpt-draw-1024x1536` | 图片模型名称 |
-| `negative_prompt` | string | `""` | 全局负面提示词 |
 | `request_timeout_seconds` | int | `180` | 图片请求超时时间 |
 | `max_concurrency` | int | `2` | 插件最大并发任务数 |
 | `max_cache_images` | int | `50` | 最大缓存图片数量 |
@@ -265,7 +263,6 @@ data/plugins/astrbot_plugin_openai_image/
 ### 7.2 配置说明
 
 - `base_url`、`api_key`、`model` 仅用于图片接口
-- `negative_prompt` 为空时不修改用户提示词，非空时追加为 `Negative prompt: ...`
 - 不再提供英文扩写模型选择项，插件不会调用 AstrBot 已配置模型做提示词改写
 
 ### 7.3 WebUI 行为要求
@@ -404,8 +401,6 @@ Content-Type: application/json
 - 命令层只负责去除命令前缀、解析数量并保留用户输入的提示词正文。
 - 提示词不会调用 AstrBot 已配置模型做英文扩写或翻译。
 - `&` 不具备触发能力，会作为普通字符继续传给图片接口。
-- 若配置了 `negative_prompt`，插件会在发送图片接口前追加 `Negative prompt: <负面提示词>`。
-- 负面提示词同时作用于文本生成、图片编辑与 QQ 头像编辑流程。
 
 ---
 
@@ -631,8 +626,6 @@ YYYYMMDD_HHMMSS_<随机短串>.<扩展名>
 
 - 生成请求体构造正确
 - 编辑请求体构造正确
-- 负面提示词为空时请求体保持原提示词不变
-- 负面提示词非空时追加到文生图和图生图文本提示词中
 - `&` 按普通提示词字符保留
 - Markdown `data:image` 解析正确
 - 非法响应判定正确
@@ -671,7 +664,7 @@ YYYYMMDD_HHMMSS_<随机短串>.<扩展名>
 - 能通过 `/oaiimg` 生成图片
 - 能通过 `/oaiedit` 编辑图片
 - `/oaiedit` 支持“同消息附图”与“回复图片”
-- 支持配置 `base_url`、`model`、`api_key`、`negative_prompt`
+- 支持配置 `base_url`、`model`、`api_key`
 - 支持配置最大并发数量
 - 支持配置最大缓存图片数量
 - 响应中的 Markdown `data:image` 能正确解析并发送

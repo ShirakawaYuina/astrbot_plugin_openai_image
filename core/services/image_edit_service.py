@@ -9,7 +9,7 @@ from typing import Any
 
 from astrbot.api import logger
 
-from ..gateways.request_builder import build_edit_payload, merge_negative_prompt
+from ..gateways.request_builder import build_edit_payload
 from ..gateways.response_parser import parse_image_response, parse_images_response
 
 
@@ -26,7 +26,6 @@ class ImageEditService:
         prompt: str,
         data_url: str = "",
         data_urls: list[str] | None = None,
-        negative_prompt: str = "",
         endpoint_type: str = "responses",
         size: str | None = None,
         quality: str = "auto",
@@ -43,7 +42,7 @@ class ImageEditService:
             response_data = await self.gateway.request_image_edit(
                 data={
                     "model": model,
-                    "prompt": merge_negative_prompt(prompt, negative_prompt),
+                    "prompt": str(prompt or "").strip(),
                     "response_format": "b64_json",
                     **_build_size_form_data(size),
                     **_build_image_option_form_data(
@@ -60,7 +59,6 @@ class ImageEditService:
                 prompt=prompt,
                 data_url=data_url,
                 data_urls=data_urls,
-                negative_prompt=negative_prompt,
                 size=size,
                 quality=quality,
                 moderation=moderation,

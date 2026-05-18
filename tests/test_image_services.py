@@ -79,14 +79,13 @@ async def test_generate_service_builds_payload_and_caches_image(tmp_path: Path):
     result_path = await service.generate(
         model="gpt-draw-1024x1536",
         prompt="生成一只小猫",
-        negative_prompt="低清晰度、文字水印",
     )
 
     assert result_path == tmp_path / "generated.png"
     assert gateway.recorded_payloads == [
         {
             "model": "gpt-draw-1024x1536",
-            "input": "生成一只小猫\n\nMust Avoid: 低清晰度、文字水印",
+            "input": "生成一只小猫",
             "tools": [
                 {
                     "type": "image_generation",
@@ -205,7 +204,6 @@ async def test_edit_service_builds_multimodal_payload_and_caches_image(
         model="gpt-draw-1024x1536",
         prompt="改成真人版",
         data_url="data:image/png;base64,abc123",
-        negative_prompt="低清晰度、文字水印",
     )
 
     assert result_path == tmp_path / "edited.jpg"
@@ -218,7 +216,7 @@ async def test_edit_service_builds_multimodal_payload_and_caches_image(
                     "content": [
                         {
                             "type": "input_text",
-                            "text": "改成真人版\n\nMust Avoid: 低清晰度、文字水印",
+                            "text": "改成真人版",
                         },
                         {
                             "type": "input_image",
