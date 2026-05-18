@@ -1674,7 +1674,6 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .settings-form-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
     }
     .settings-form-grid .control {
@@ -2049,6 +2048,7 @@ ADMIN_HTML = r"""<!doctype html>
     const DEFAULT_GALLERY_COLUMN_COUNT = 4;
     const MIN_GALLERY_COLUMN_COUNT = 2;
     const MAX_GALLERY_COLUMN_COUNT = 8;
+    const PROMPT_OPTIMIZER_API_KEY_MASK = "********";
     const state = {
       token: localStorage.getItem("openaiImageAdminToken") || "",
       images: [],
@@ -2356,7 +2356,7 @@ ADMIN_HTML = r"""<!doctype html>
     function renderPromptOptimizerSettings(settings) {
       $("promptOptimizerModel").value = settings.model || "";
       $("promptOptimizerBaseUrl").value = settings.base_url || "";
-      $("promptOptimizerApiKey").value = "";
+      $("promptOptimizerApiKey").value = settings.has_api_key ? PROMPT_OPTIMIZER_API_KEY_MASK : "";
       $("promptOptimizerKeyState").textContent = settings.has_api_key ? "API Key 已保存" : "API Key 未保存";
     }
 
@@ -2375,7 +2375,7 @@ ADMIN_HTML = r"""<!doctype html>
           body: JSON.stringify({
             model: $("promptOptimizerModel").value,
             base_url: $("promptOptimizerBaseUrl").value,
-            api_key: $("promptOptimizerApiKey").value,
+            api_key: $("promptOptimizerApiKey").value === PROMPT_OPTIMIZER_API_KEY_MASK ? "" : $("promptOptimizerApiKey").value,
           }),
         });
         renderPromptOptimizerSettings(settings);

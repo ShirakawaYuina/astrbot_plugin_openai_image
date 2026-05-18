@@ -837,7 +837,17 @@ def test_admin_html_supports_prompt_optimizer_buttons():
     assert "id=\"promptOptimizerBaseUrl\"" in module.ADMIN_HTML
     assert "id=\"promptOptimizerApiKey\"" in module.ADMIN_HTML
     assert "id=\"savePromptOptimizerSettingsBtn\"" in module.ADMIN_HTML
-    assert "api_key: $(\"promptOptimizerApiKey\").value" in module.ADMIN_HTML
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr));" not in module.ADMIN_HTML
+    assert 'const PROMPT_OPTIMIZER_API_KEY_MASK = "********";' in module.ADMIN_HTML
+    assert (
+        "$(\"promptOptimizerApiKey\").value = settings.has_api_key ? "
+        "PROMPT_OPTIMIZER_API_KEY_MASK : \"\";"
+    ) in module.ADMIN_HTML
+    assert (
+        "api_key: $(\"promptOptimizerApiKey\").value === "
+        "PROMPT_OPTIMIZER_API_KEY_MASK ? \"\" : "
+        "$(\"promptOptimizerApiKey\").value"
+    ) in module.ADMIN_HTML
     assert "loadPromptOptimizerSettings" in module.ADMIN_HTML
     assert "savePromptOptimizerSettings" in module.ADMIN_HTML
     assert "id=\"generateOptimizePrompt\"" in module.ADMIN_HTML

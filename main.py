@@ -50,7 +50,7 @@ FIGURE_IMAGE_FILE_NAME = "robot_figure.png"
     PLUGIN_NAME,
     "Codex",
     "基于 OpenAI 兼容 chat/completions 接口的图片生成与图片编辑插件。",
-    "0.6.39",
+    "0.6.40",
 )
 class OpenAIImagePlugin(Star):
     """OpenAI 图片插件。"""
