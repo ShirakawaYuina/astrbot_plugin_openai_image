@@ -1445,7 +1445,6 @@ ADMIN_HTML = r"""<!doctype html>
     textarea {
       width: 100%;
       min-height: 86px;
-      resize: vertical;
       padding: 12px;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -1453,6 +1452,10 @@ ADMIN_HTML = r"""<!doctype html>
       background: #fff;
       color: var(--text);
       line-height: 1.55;
+    }
+    .auto-resize-textarea {
+      overflow: hidden;
+      resize: none;
     }
     textarea:disabled {
       background: #f3f7fd;
@@ -1894,7 +1897,7 @@ ADMIN_HTML = r"""<!doctype html>
                       <span>优化</span>
                     </button>
                   </div>
-                  <textarea id="generatePrompt" placeholder="例如：浅色自然光下的现代别墅，干净构图，高细节。"></textarea>
+                  <textarea id="generatePrompt" class="auto-resize-textarea" placeholder="例如：浅色自然光下的现代别墅，干净构图，高细节。"></textarea>
                 </div>
               </div>
               <div class="field-row">
@@ -1929,7 +1932,7 @@ ADMIN_HTML = r"""<!doctype html>
                       <span>优化</span>
                     </button>
                   </div>
-                  <textarea id="editPrompt" placeholder="例如：保留主体构图，改成柔和水彩风格，背景更明亮。"></textarea>
+                  <textarea id="editPrompt" class="auto-resize-textarea" placeholder="例如：保留主体构图，改成柔和水彩风格，背景更明亮。"></textarea>
                 </div>
               </div>
               <div class="field-row edit-options">
@@ -2124,10 +2127,21 @@ ADMIN_HTML = r"""<!doctype html>
         item.classList.toggle("active", item.dataset.panel === panelId);
       });
       updatePreviewVisibility(panelId);
+      resizePromptTextareas();
     }
 
     function updatePreviewVisibility(panelId) {
       document.body.classList.toggle("preview-hidden", panelId !== "galleryPanel");
+    }
+
+    function resizePromptTextarea(textarea) {
+      if (!textarea) return;
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+
+    function resizePromptTextareas() {
+      ["generatePrompt", "editPrompt"].forEach((id) => resizePromptTextarea($(id)));
     }
 
     function escapeAttribute(value) {
@@ -2163,6 +2177,7 @@ ADMIN_HTML = r"""<!doctype html>
           }),
         });
         textarea.value = data.prompt || "";
+        resizePromptTextarea(textarea);
         showToast("提示词已优化");
       } catch (error) {
         showToast(error.message);
@@ -2826,6 +2841,9 @@ ADMIN_HTML = r"""<!doctype html>
     $("editSizePreset").addEventListener("change", () => syncCustomSize("editSizePreset", "editCustomSize"));
     $("generateOptimizePrompt").addEventListener("click", () => optimizePrompt($("generateOptimizePrompt")));
     $("editOptimizePrompt").addEventListener("click", () => optimizePrompt($("editOptimizePrompt")));
+    ["generatePrompt", "editPrompt"].forEach((id) => {
+      $(id).addEventListener("input", () => resizePromptTextarea($(id)));
+    });
     $("editImage").addEventListener("change", () => {
       Array.from($("editImage").files || []).forEach(addReferenceImageFile);
       $("editImage").value = "";
@@ -2849,6 +2867,7 @@ ADMIN_HTML = r"""<!doctype html>
       window.clearTimeout(resizeRenderTimer);
       resizeRenderTimer = window.setTimeout(() => {
         if (state.activePanel === "galleryPanel") renderGallery();
+        resizePromptTextareas();
       }, 120);
     });
 
@@ -2933,6 +2952,7 @@ ADMIN_HTML = r"""<!doctype html>
       loadGalleryPageSizeSetting();
       loadGalleryColumnSetting();
     }
+    resizePromptTextareas();
   </script>
 </body>
 </html>

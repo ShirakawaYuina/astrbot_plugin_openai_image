@@ -852,6 +852,14 @@ def test_admin_html_supports_prompt_optimizer_buttons():
     assert "id=\"generateOptimizePrompt\"" in module.ADMIN_HTML
     assert "id=\"editOptimizePrompt\"" in module.ADMIN_HTML
     assert "<label for=\"generatePrompt\">提示词</label>" in module.ADMIN_HTML
+    assert 'id="generatePrompt" class="auto-resize-textarea"' in module.ADMIN_HTML
+    assert 'id="editPrompt" class="auto-resize-textarea"' in module.ADMIN_HTML
+    assert ".auto-resize-textarea" in module.ADMIN_HTML
+    assert "function resizePromptTextarea(textarea)" in module.ADMIN_HTML
+    assert "function resizePromptTextareas()" in module.ADMIN_HTML
+    assert "resizePromptTextarea(textarea);" in module.ADMIN_HTML
+    assert '$(id).addEventListener("input", () => resizePromptTextarea($(id)))' in module.ADMIN_HTML
+    assert "resizePromptTextareas();" in module.ADMIN_HTML
     assert "data-prompt-mode=\"generate\"" in module.ADMIN_HTML
     assert "data-prompt-mode=\"edit\"" in module.ADMIN_HTML
     assert "async function optimizePrompt(button)" in module.ADMIN_HTML
