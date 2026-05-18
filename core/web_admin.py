@@ -1373,7 +1373,7 @@ ADMIN_HTML = r"""<!doctype html>
     }
     .action-panel {
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(0, 1fr);
       align-self: stretch;
       align-items: start;
       gap: 14px;
@@ -1381,6 +1381,7 @@ ADMIN_HTML = r"""<!doctype html>
       border: 1px solid var(--line);
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.68);
+      min-height: 0;
     }
     .control-stack {
       display: grid;
@@ -1475,7 +1476,9 @@ ADMIN_HTML = r"""<!doctype html>
     .reference-panel {
       display: grid;
       gap: 12px;
+      grid-template-rows: auto minmax(220px, 1fr);
       align-content: start;
+      min-height: 0;
     }
     .reference-head {
       display: flex;
@@ -1536,6 +1539,8 @@ ADMIN_HTML = r"""<!doctype html>
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
+      align-content: start;
+      min-height: 0;
     }
     .reference-thumb {
       position: relative;

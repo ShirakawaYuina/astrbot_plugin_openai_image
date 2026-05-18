@@ -775,8 +775,10 @@ def test_admin_html_places_vertical_action_panel_beside_workspace_result():
     assert "min-height: calc(100vh - 190px);" in module.ADMIN_HTML
     assert 'id="generateForm" class="action-panel compact-control-panel"' in module.ADMIN_HTML
     assert "action-panel-single" not in module.ADMIN_HTML
-    assert "grid-template-columns: 1fr;" in module.ADMIN_HTML
+    assert "grid-template-rows: auto minmax(0, 1fr);" in module.ADMIN_HTML
     assert "min-height: calc(100vh - 226px);" in module.ADMIN_HTML
+    assert "grid-template-rows: auto minmax(220px, 1fr);" in module.ADMIN_HTML
+    assert "min-height: 0;" in module.ADMIN_HTML
     assert "id=\"generateResultBox\"" in module.ADMIN_HTML
     assert "id=\"editResultBox\"" in module.ADMIN_HTML
     assert "class=\"result-label\"" in module.ADMIN_HTML
