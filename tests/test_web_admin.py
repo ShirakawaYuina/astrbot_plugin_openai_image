@@ -938,16 +938,22 @@ def test_admin_html_hides_preview_sidebar_outside_gallery_page():
 
 def test_admin_html_centers_preview_image_and_shows_prompt_size_metadata():
     module = _load_module()
+    preview_box_rule = re.search(r"\.preview-box\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
     preview_image_rule = re.search(r"\.preview-box img\s*\{(?P<body>[^}]+)\}", module.ADMIN_HTML)
 
     assert "display: grid;" in module.ADMIN_HTML
     assert "place-items: center;" in module.ADMIN_HTML
+    assert preview_box_rule is not None
+    preview_box_body = preview_box_rule.group("body")
+    assert "width: 100%;" in preview_box_body
+    assert "max-width: 100%;" in preview_box_body
+    assert "min-width: 0;" in preview_box_body
+    assert "min-height: 0;" in preview_box_body
+    assert "min-height: 420px;" not in preview_box_body
     assert preview_image_rule is not None
     rule_body = preview_image_rule.group("body")
-    assert "max-width: 100%;" in rule_body
-    assert "max-height: 100%;" in rule_body
-    assert "width: auto;" in rule_body
-    assert "height: auto;" in rule_body
+    assert "width: 100%;" in rule_body
+    assert "height: 100%;" in rule_body
     assert "object-fit: contain;" in rule_body
     assert "id=\"detailPrompt\"" in module.ADMIN_HTML
     assert "id=\"detailGenerationSize\"" in module.ADMIN_HTML

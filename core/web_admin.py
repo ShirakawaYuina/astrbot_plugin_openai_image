@@ -1594,18 +1594,19 @@ ADMIN_HTML = r"""<!doctype html>
       display: grid;
       place-items: center;
       overflow: hidden;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
       border-radius: 8px;
       border: 1px solid var(--line);
       background: #edf3fb;
       aspect-ratio: 1 / 1;
-      min-height: 420px;
+      min-height: 0;
       cursor: zoom-in;
     }
     .preview-box img {
-      max-width: 100%;
-      max-height: 100%;
-      width: auto;
-      height: auto;
+      width: 100%;
+      height: 100%;
       object-fit: contain;
       display: block;
     }
