@@ -21,6 +21,7 @@ class ImageProviderConfig:
     name: str
     base_url: str
     api_key: str
+    proxy_url: str
 
 
 def resolve_active_image_provider(config: dict[str, Any]) -> ImageProviderConfig:
@@ -71,11 +72,13 @@ def _normalize_provider_payload(payload: Any) -> ImageProviderConfig | None:
     )
     name = str(payload.get("name", "") or "").strip() or DEFAULT_PROVIDER_NAME
     api_key = str(payload.get("api_key", "") or "").strip()
+    proxy_url = str(payload.get("proxy_url", "") or "").strip()
     return ImageProviderConfig(
         provider_id=provider_id,
         name=name,
         base_url=base_url,
         api_key=api_key,
+        proxy_url=proxy_url,
     )
 
 
@@ -91,4 +94,5 @@ def _resolve_legacy_provider(config: dict[str, Any]) -> ImageProviderConfig | No
         name=DEFAULT_PROVIDER_NAME,
         base_url=base_url,
         api_key=str(config.get(LEGACY_API_KEY_CONFIG_KEY, "") or "").strip(),
+        proxy_url="",
     )

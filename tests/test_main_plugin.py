@@ -56,6 +56,7 @@ def test_rebuild_runtime_dependencies_uses_dropdown_selected_provider():
                     "name": "备用供应商",
                     "base_url": "https://backup.example.com/v1",
                     "api_key": "backup-key",
+                    "proxy_url": "http://127.0.0.1:7891",
                 },
                 {
                     "__template_key": "openai_compatible",
@@ -63,6 +64,7 @@ def test_rebuild_runtime_dependencies_uses_dropdown_selected_provider():
                     "name": "主供应商",
                     "base_url": "https://primary.example.com/v1",
                     "api_key": "primary-key",
+                    "proxy_url": "http://127.0.0.1:7890",
                 },
             ],
         },
@@ -74,6 +76,7 @@ def test_rebuild_runtime_dependencies_uses_dropdown_selected_provider():
     assert active_provider.name == "主供应商"
     assert active_provider.base_url == "https://primary.example.com/v1"
     assert active_provider.api_key == "primary-key"
+    assert active_provider.proxy_url == "http://127.0.0.1:7890"
 
 
 def test_rebuild_runtime_dependencies_passes_image_proxy_to_gateway():
@@ -88,9 +91,9 @@ def test_rebuild_runtime_dependencies_passes_image_proxy_to_gateway():
                     "name": "默认供应商",
                     "base_url": "https://example.com/v1",
                     "api_key": "demo-key",
+                    "proxy_url": " http://127.0.0.1:7890 ",
                 }
             ],
-            "image_proxy_url": " http://127.0.0.1:7890 ",
         },
     )
 

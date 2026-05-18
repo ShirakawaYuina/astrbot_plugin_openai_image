@@ -50,7 +50,7 @@ FIGURE_IMAGE_FILE_NAME = "robot_figure.png"
     PLUGIN_NAME,
     "Codex",
     "基于 OpenAI 兼容 chat/completions 接口的图片生成与图片编辑插件。",
-    "0.6.38",
+    "0.6.39",
 )
 class OpenAIImagePlugin(Star):
     """OpenAI 图片插件。"""
@@ -1045,7 +1045,7 @@ class OpenAIImagePlugin(Star):
             base_url=active_provider.base_url,
             api_key=active_provider.api_key,
             timeout_seconds=int(self.config.get("request_timeout_seconds", 180) or 180),
-            proxy_url=self._get_image_proxy_url(),
+            proxy_url=active_provider.proxy_url,
         )
         self._generate_service = ImageGenerateService(
             gateway=self._image_gateway,
@@ -1112,15 +1112,6 @@ class OpenAIImagePlugin(Star):
         if self._get_endpoint_type() == ENDPOINT_TYPE_IMAGES:
             return DEFAULT_IMAGES_MODEL
         return DEFAULT_RESPONSES_MODEL
-
-    def _get_image_proxy_url(self) -> str:
-        """读取图片接口代理地址。
-
-        该配置只传给 OpenAIImageGateway 的图片接口请求，不参与网页后台监听、
-        图库文件读取、图片发送回传或提示词优化接口调用，避免代理影响非图片上游链路。
-        """
-
-        return str(self.config.get("image_proxy_url", "") or "").strip()
 
     def _parse_command_payload_for_event(
         self,

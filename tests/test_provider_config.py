@@ -26,12 +26,14 @@ def test_resolve_active_image_provider_uses_dropdown_selected_provider_id():
                     "name": "备用供应商",
                     "base_url": "https://backup.example.com/v1",
                     "api_key": "backup-key",
+                    "proxy_url": "http://127.0.0.1:7891",
                 },
                 {
                     "provider_id": "primary",
                     "name": "主供应商",
                     "base_url": " https://primary.example.com/v1/ ",
                     "api_key": " primary-key ",
+                    "proxy_url": " http://127.0.0.1:7890 ",
                 },
             ]
         }
@@ -40,6 +42,7 @@ def test_resolve_active_image_provider_uses_dropdown_selected_provider_id():
     assert provider.name == "主供应商"
     assert provider.base_url == "https://primary.example.com/v1"
     assert provider.api_key == "primary-key"
+    assert provider.proxy_url == "http://127.0.0.1:7890"
 
 
 def test_resolve_active_image_provider_falls_back_to_legacy_fields():
@@ -55,6 +58,7 @@ def test_resolve_active_image_provider_falls_back_to_legacy_fields():
     assert provider.name == "默认供应商"
     assert provider.base_url == "https://legacy.example.com/v1"
     assert provider.api_key == "legacy-key"
+    assert provider.proxy_url == ""
 
 
 def test_resolve_active_image_provider_rejects_missing_base_url():
@@ -78,8 +82,12 @@ def test_config_schema_replaces_base_url_and_api_key_with_provider_list():
     assert "default" in schema["active_provider_id"]["options"]
     assert schema["image_providers"]["type"] == "template_list"
     assert "openai_compatible" in schema["image_providers"]["templates"]
-    assert schema["image_proxy_url"]["type"] == "string"
-    assert "图片接口" in schema["image_proxy_url"]["description"]
+    provider_items = schema["image_providers"]["templates"]["openai_compatible"][
+        "items"
+    ]
+    assert provider_items["proxy_url"]["type"] == "string"
+    assert "供应商" in provider_items["proxy_url"]["hint"]
+    assert "image_proxy_url" not in schema
     assert "prompt_optimizer_model" not in schema
     assert "prompt_optimizer_base_url" not in schema
     assert "prompt_optimizer_api_key" not in schema
