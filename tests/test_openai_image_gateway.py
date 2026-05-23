@@ -65,6 +65,24 @@ class _FakeResponse:
         return False
 
 
+class _FakeBinaryResponse:
+    def __init__(self, payload: bytes, content_type: str = "image/png"):
+        self._payload = payload
+        self.headers = {"Content-Type": content_type}
+
+    def raise_for_status(self) -> None:
+        return None
+
+    async def read(self) -> bytes:
+        return self._payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 class _FakeSession:
     def __init__(self, payloads_by_endpoint: dict[str, dict]):
         self.payloads_by_endpoint = payloads_by_endpoint
@@ -84,6 +102,20 @@ class _FakeSession:
         self.recorded_payloads.append(json)
         self.recorded_proxies.append(proxy)
         return _FakeResponse(self.payloads_by_endpoint[endpoint])
+
+
+class _FakeBinarySession:
+    def __init__(self, payloads_by_url: dict[str, tuple[bytes, str]]):
+        self.payloads_by_url = payloads_by_url
+        self.called_urls: list[str] = []
+        self.recorded_proxies: list[str | None] = []
+        self.closed = False
+
+    def get(self, image_url: str, proxy: str | None = None):
+        self.called_urls.append(image_url)
+        self.recorded_proxies.append(proxy)
+        payload, content_type = self.payloads_by_url[image_url]
+        return _FakeBinaryResponse(payload=payload, content_type=content_type)
 
 
 class _FakeMultipartSession:
@@ -275,6 +307,34 @@ async def test_gateway_passes_proxy_to_multipart_image_request():
         files=[("first.png", b"first", "image/png")],
     )
 
+    assert session.recorded_proxies == ["http://127.0.0.1:7890"]
+
+
+@pytest.mark.asyncio
+async def test_gateway_downloads_url_image_with_proxy():
+    module = _load_module()
+    session = _FakeBinarySession(
+        {
+            "https://file.example.com/generated/demo.png": (
+                b"downloaded-image",
+                "image/png; charset=utf-8",
+            )
+        }
+    )
+    gateway = module.OpenAIImageGateway(
+        base_url="https://cdn.jucode.top/v1",
+        api_key="demo-key",
+        proxy_url="http://127.0.0.1:7890",
+        session=session,
+    )
+
+    image_bytes, mime_type = await gateway.download_image(
+        "https://file.example.com/generated/demo.png"
+    )
+
+    assert image_bytes == b"downloaded-image"
+    assert mime_type == "image/png"
+    assert session.called_urls == ["https://file.example.com/generated/demo.png"]
     assert session.recorded_proxies == ["http://127.0.0.1:7890"]
 
 

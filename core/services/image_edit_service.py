@@ -11,6 +11,7 @@ from astrbot.api import logger
 
 from ..gateways.request_builder import build_edit_payload
 from ..gateways.response_parser import parse_image_response, parse_images_response
+from .image_response_resolver import resolve_parsed_image_response
 
 
 class ImageEditService:
@@ -75,6 +76,10 @@ class ImageEditService:
                 response_summary,
             )
             raise ValueError(f"{exc}; {response_summary}") from exc
+        parsed_response = await resolve_parsed_image_response(
+            self.gateway,
+            parsed_response,
+        )
         image_path = self.cache_store.save_image(
             parsed_response.image_bytes,
             parsed_response.extension,

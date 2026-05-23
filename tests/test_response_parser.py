@@ -51,6 +51,46 @@ def test_parse_images_response_extracts_data_b64_json():
     assert parsed.mime_type == "image/png"
     assert parsed.extension == ".png"
     assert parsed.image_bytes == b"hello"
+    assert parsed.image_url == ""
+
+
+def test_parse_images_response_extracts_data_url():
+    module = _load_module()
+
+    response = {
+        "data": [
+            {
+                "url": "https://file.example.com/generated/demo.webp",
+            }
+        ]
+    }
+
+    parsed = module.parse_images_response(response)
+
+    assert parsed.mime_type == "image/webp"
+    assert parsed.extension == ".webp"
+    assert parsed.image_bytes == b""
+    assert parsed.image_url == "https://file.example.com/generated/demo.webp"
+
+
+def test_parse_image_response_accepts_url_result():
+    module = _load_module()
+
+    response = {
+        "output": [
+            {
+                "type": "image_generation_call",
+                "result": "https://file.example.com/generated/demo.png",
+            }
+        ]
+    }
+
+    parsed = module.parse_image_response(response)
+
+    assert parsed.mime_type == "image/png"
+    assert parsed.extension == ".png"
+    assert parsed.image_bytes == b""
+    assert parsed.image_url == "https://file.example.com/generated/demo.png"
 
 
 def test_parse_image_response_rejects_missing_output_items():

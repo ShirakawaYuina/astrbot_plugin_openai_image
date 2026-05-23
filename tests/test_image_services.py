@@ -21,9 +21,15 @@ def _load_edit_module():
 
 
 class _FakeGateway:
-    def __init__(self, response_data: dict):
+    def __init__(
+        self,
+        response_data: dict,
+        downloaded_image: tuple[bytes, str | None] = (b"downloaded", "image/png"),
+    ):
         self.response_data = response_data
+        self.downloaded_image = downloaded_image
         self.recorded_payloads: list[dict] = []
+        self.downloaded_urls: list[str] = []
 
     async def request_response(self, payload: dict) -> dict:
         self.recorded_payloads.append(payload)
@@ -36,6 +42,10 @@ class _FakeGateway:
     async def request_image_edit(self, data: dict, files: list[tuple]) -> dict:
         self.recorded_payloads.append({"data": data, "files": files})
         return self.response_data
+
+    async def download_image(self, image_url: str) -> tuple[bytes, str | None]:
+        self.downloaded_urls.append(image_url)
+        return self.downloaded_image
 
 
 class _FakeCacheStore:
@@ -151,6 +161,33 @@ async def test_generate_service_can_use_images_generations_endpoint(tmp_path: Pa
             },
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_generate_service_downloads_url_image_result(tmp_path: Path):
+    module = _load_generate_module()
+    gateway = _FakeGateway(
+        {
+            "data": [
+                {
+                    "url": "https://file.example.com/generated/demo.png",
+                }
+            ]
+        },
+        downloaded_image=(b"hello-from-url", "image/png"),
+    )
+    cache_store = _FakeCacheStore(tmp_path / "generated.png")
+    service = module.ImageGenerateService(gateway=gateway, cache_store=cache_store)
+
+    result_path = await service.generate(
+        model="gpt-image-2",
+        prompt="生成一只小猫",
+        endpoint_type="images",
+    )
+
+    assert result_path == tmp_path / "generated.png"
+    assert gateway.downloaded_urls == ["https://file.example.com/generated/demo.png"]
+    assert cache_store.saved_images == [(b"hello-from-url", ".png")]
 
 
 @pytest.mark.asyncio
@@ -337,6 +374,34 @@ async def test_edit_service_can_use_images_edits_endpoint_with_multiple_images(
         }
     ]
     assert cache_store.saved_images == [(b"world", ".png")]
+
+
+@pytest.mark.asyncio
+async def test_edit_service_downloads_url_image_result(tmp_path: Path):
+    module = _load_edit_module()
+    gateway = _FakeGateway(
+        {
+            "data": [
+                {
+                    "url": "https://file.example.com/generated/demo.webp",
+                }
+            ]
+        },
+        downloaded_image=(b"edited-from-url", "image/webp"),
+    )
+    cache_store = _FakeCacheStore(tmp_path / "edited.webp")
+    service = module.ImageEditService(gateway=gateway, cache_store=cache_store)
+
+    result_path = await service.edit(
+        model="gpt-image-2",
+        prompt="将图中的角色换成星见雅",
+        data_url="data:image/png;base64,Zmlyc3Q=",
+        endpoint_type="images",
+    )
+
+    assert result_path == tmp_path / "edited.webp"
+    assert gateway.downloaded_urls == ["https://file.example.com/generated/demo.webp"]
+    assert cache_store.saved_images == [(b"edited-from-url", ".webp")]
 
 
 @pytest.mark.asyncio

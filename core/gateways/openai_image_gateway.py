@@ -142,6 +142,25 @@ class OpenAIImageGateway:
         )
         raise RuntimeError(f"图片接口请求失败: {business_error}")
 
+    async def download_image(self, image_url: str) -> tuple[bytes, str | None]:
+        """下载上游返回的 URL 图片结果。"""
+
+        clean_image_url = str(image_url or "").strip()
+        if not clean_image_url:
+            raise ValueError("图片下载地址不能为空")
+
+        session = await self._get_session()
+        try:
+            async with session.get(
+                clean_image_url,
+                proxy=self._proxy_url,
+            ) as response:
+                response.raise_for_status()
+                image_bytes = await response.read()
+                return image_bytes, self._extract_content_type(response)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"URL 图片下载失败: {exc}") from exc
+
     async def _post_json(
         self,
         endpoint: str,
@@ -212,6 +231,18 @@ class OpenAIImageGateway:
         timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
         self._owned_session = aiohttp.ClientSession(timeout=timeout, trust_env=True)
         return self._owned_session
+
+    @staticmethod
+    def _extract_content_type(response: Any) -> str | None:
+        """从下载响应头中提取 MIME 类型，去掉 charset 等附加参数。"""
+
+        headers = getattr(response, "headers", None)
+        if not headers:
+            return None
+
+        content_type = str(headers.get("Content-Type", "") or "")
+        clean_content_type = content_type.split(";", 1)[0].strip().lower()
+        return clean_content_type or None
 
     @staticmethod
     def _looks_like_success_response(response_data: Any) -> bool:
