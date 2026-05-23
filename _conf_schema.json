@@ -9,10 +9,12 @@
                 "name": "默认供应商",
                 "base_url": "https://cdn.jucode.top/v1",
                 "api_key": "",
-                "proxy_url": ""
+                "proxy_url": "",
+                "model": "",
+                "endpoint_type": "responses"
             }
         ],
-        "hint": "可添加多个 OpenAI 兼容图片接口供应商。provider_id 需要从下方供应商槽位中选择，并与“当前启用供应商”下拉选择保持一致。",
+        "hint": "可添加多个 OpenAI 兼容图片接口供应商。每个供应商独立配置 Base URL、API Key、代理、模型和端点类型；provider_id 需要与“当前启用供应商”下拉选择保持一致。",
         "templates": {
             "openai_compatible": {
                 "name": "OpenAI 兼容供应商",
@@ -61,6 +63,22 @@
                         "type": "string",
                         "default": "",
                         "hint": "仅此供应商发出图片接口请求并读取响应时生效，例如 http://127.0.0.1:7890。留空则该供应商不使用显式代理。"
+                    },
+                    "model": {
+                        "description": "图片模型名称",
+                        "type": "string",
+                        "default": "",
+                        "hint": "仅此供应商生效。留空时自动按端点类型选择默认模型：responses 使用 gpt-5.4-mini，images 使用 gpt-image-2。"
+                    },
+                    "endpoint_type": {
+                        "description": "图片接口端点类型",
+                        "type": "string",
+                        "default": "responses",
+                        "options": [
+                            "responses",
+                            "images"
+                        ],
+                        "hint": "仅此供应商生效。responses 使用 /v1/responses；images 文生图使用 /v1/images/generations，图片编辑使用 /v1/images/edits。"
                     }
                 }
             }
@@ -84,23 +102,7 @@
             "供应商 4",
             "供应商 5"
         ],
-        "hint": "下拉选择当前要使用的图片接口供应商。请确保供应商列表中存在相同槽位且已填写 Base URL。"
-    },
-    "model": {
-        "description": "图片模型名称",
-        "type": "string",
-        "default": "",
-        "hint": "留空时自动按端点类型选择默认模型：responses 使用 gpt-5.4-mini，images 使用 gpt-image-2。"
-    },
-    "endpoint_type": {
-        "description": "图片接口端点类型",
-        "type": "string",
-        "default": "responses",
-        "options": [
-            "responses",
-            "images"
-        ],
-        "hint": "responses 使用 /v1/responses；images 文生图使用 /v1/images/generations，图片编辑使用 /v1/images/edits。"
+        "hint": "下拉选择当前要使用的图片接口供应商。模型名称和端点类型会读取该供应商条目内的独立配置。"
     },
     "image_size": {
         "description": "默认输出图片尺寸",

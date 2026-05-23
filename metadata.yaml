@@ -1,6 +1,6 @@
 name: astrbot_plugin_openai_image
 display_name: OpenAI 图片生成
 author: AsryMiu
-version: 0.6.44
+version: 0.6.45
 description: 基于 OpenAI 兼容图片接口的 AstrBot 图片生成与图片编辑插件，支持缓存、并发限制、OneBot v11 回传与网页后台。
 repo: https://github.com/ShirakawaYuina/astrbot_plugin_openai_image

@@ -38,10 +38,6 @@ from .core.utils.image_extract import (
 from .core.web_admin import WebAdminServer, WebAdminSettings
 
 PLUGIN_NAME = "astrbot_plugin_openai_image"
-DEFAULT_RESPONSES_MODEL = "gpt-5.4-mini"
-DEFAULT_IMAGES_MODEL = "gpt-image-2"
-ENDPOINT_TYPE_IMAGES = "images"
-ENDPOINT_TYPE_RESPONSES = "responses"
 FIGURE_IMAGE_DIR_NAME = "figure"
 FIGURE_IMAGE_FILE_NAME = "robot_figure.png"
 
@@ -49,8 +45,8 @@ FIGURE_IMAGE_FILE_NAME = "robot_figure.png"
 @register(
     PLUGIN_NAME,
     "Codex",
-    "基于 OpenAI 兼容 chat/completions 接口的图片生成与图片编辑插件。",
-    "0.6.42",
+    "基于 OpenAI 兼容图片接口的图片生成与图片编辑插件。",
+    "0.6.45",
 )
 class OpenAIImagePlugin(Star):
     """OpenAI 图片插件。"""
@@ -1069,7 +1065,7 @@ class OpenAIImagePlugin(Star):
             self._rebuild_runtime_dependencies()
 
     def _get_active_image_provider(self) -> ImageProviderConfig:
-        """读取当前启用供应商，必要时重新解析配置作为兜底。"""
+        """读取当前启用供应商，必要时重新解析供应商配置。"""
 
         if self._active_image_provider is None:
             # initialize 日志可能在依赖重建后读取该对象；这里保留兜底，防止测试或热重载流程绕过重建。
@@ -1087,24 +1083,14 @@ class OpenAIImagePlugin(Star):
         return normalize_output_size(self.config.get("image_size"))
 
     def _get_endpoint_type(self) -> str:
-        """读取图片生成端点类型，未知值回退到 Responses 以保持兼容。"""
+        """读取当前图片供应商独立配置的端点类型。"""
 
-        endpoint_type = str(
-            self.config.get("endpoint_type", ENDPOINT_TYPE_RESPONSES) or ""
-        ).strip()
-        if endpoint_type == ENDPOINT_TYPE_IMAGES:
-            return ENDPOINT_TYPE_IMAGES
-        return ENDPOINT_TYPE_RESPONSES
+        return self._get_active_image_provider().endpoint_type
 
     def _get_configured_model(self) -> str:
-        """读取模型配置，未显式配置时按端点类型选择默认模型。"""
+        """读取当前图片供应商独立配置的模型名称。"""
 
-        configured_model = str(self.config.get("model", "") or "").strip()
-        if configured_model:
-            return configured_model
-        if self._get_endpoint_type() == ENDPOINT_TYPE_IMAGES:
-            return DEFAULT_IMAGES_MODEL
-        return DEFAULT_RESPONSES_MODEL
+        return self._get_active_image_provider().model
 
     def _parse_command_payload_for_event(
         self,

@@ -31,7 +31,15 @@ def test_rebuild_runtime_dependencies_passes_image_send_config_to_presenter():
     plugin = module.OpenAIImagePlugin(
         context=SimpleNamespace(),
         config={
-            "base_url": "https://example.com/v1",
+            "image_providers": [
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "default",
+                    "name": "默认供应商",
+                    "base_url": "https://example.com/v1",
+                    "api_key": "demo-key",
+                }
+            ],
             "image_send_mode": "url",
             "image_send_url_base": "http://astrbot:6185",
         },
@@ -57,6 +65,8 @@ def test_rebuild_runtime_dependencies_uses_dropdown_selected_provider():
                     "base_url": "https://backup.example.com/v1",
                     "api_key": "backup-key",
                     "proxy_url": "http://127.0.0.1:7891",
+                    "model": "gpt-backup",
+                    "endpoint_type": "responses",
                 },
                 {
                     "__template_key": "openai_compatible",
@@ -65,6 +75,8 @@ def test_rebuild_runtime_dependencies_uses_dropdown_selected_provider():
                     "base_url": "https://primary.example.com/v1",
                     "api_key": "primary-key",
                     "proxy_url": "http://127.0.0.1:7890",
+                    "model": "gpt-image-primary",
+                    "endpoint_type": "images",
                 },
             ],
         },
@@ -77,6 +89,8 @@ def test_rebuild_runtime_dependencies_uses_dropdown_selected_provider():
     assert active_provider.base_url == "https://primary.example.com/v1"
     assert active_provider.api_key == "primary-key"
     assert active_provider.proxy_url == "http://127.0.0.1:7890"
+    assert active_provider.model == "gpt-image-primary"
+    assert active_provider.endpoint_type == "images"
 
 
 def test_rebuild_runtime_dependencies_passes_image_proxy_to_gateway():
@@ -596,7 +610,17 @@ async def test_execute_generate_flow_uses_images_default_model_when_configured()
     module = _load_module()
     plugin = module.OpenAIImagePlugin(
         context=SimpleNamespace(),
-        config={"endpoint_type": "images"},
+        config={
+            "image_providers": [
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "default",
+                    "name": "默认供应商",
+                    "base_url": "https://example.com/v1",
+                    "endpoint_type": "images",
+                }
+            ],
+        },
     )
     plugin._image_gateway = object()
     plugin._generate_service = SimpleNamespace(
@@ -638,7 +662,17 @@ async def test_execute_generate_flow_passes_command_size_override():
     module = _load_module()
     plugin = module.OpenAIImagePlugin(
         context=SimpleNamespace(),
-        config={"image_size": "1024x1024"},
+        config={
+            "image_size": "1024x1024",
+            "image_providers": [
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "default",
+                    "name": "默认供应商",
+                    "base_url": "https://example.com/v1",
+                }
+            ],
+        },
     )
     plugin._image_gateway = object()
     plugin._generate_service = SimpleNamespace(
@@ -679,7 +713,19 @@ async def test_execute_generate_flow_passes_command_size_override():
 @pytest.mark.asyncio
 async def test_execute_generate_flow_passes_quality_and_moderation_override():
     module = _load_module()
-    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "image_providers": [
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "default",
+                    "name": "默认供应商",
+                    "base_url": "https://example.com/v1",
+                }
+            ],
+        },
+    )
     plugin._image_gateway = object()
     plugin._generate_service = SimpleNamespace(
         generate=AsyncMock(return_value=Path("generated.png"))
@@ -720,7 +766,19 @@ async def test_execute_generate_flow_passes_quality_and_moderation_override():
 @pytest.mark.asyncio
 async def test_run_generate_jobs_sends_each_success_image_individually(tmp_path: Path):
     module = _load_module()
-    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "image_providers": [
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "default",
+                    "name": "默认供应商",
+                    "base_url": "https://example.com/v1",
+                }
+            ],
+        },
+    )
     first_path = tmp_path / "first.png"
     second_path = tmp_path / "second.png"
     plugin._generate_service = SimpleNamespace(
@@ -790,7 +848,17 @@ async def test_run_edit_jobs_uses_images_default_model_when_configured():
     module = _load_module()
     plugin = module.OpenAIImagePlugin(
         context=SimpleNamespace(),
-        config={"endpoint_type": "images"},
+        config={
+            "image_providers": [
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "default",
+                    "name": "默认供应商",
+                    "base_url": "https://example.com/v1",
+                    "endpoint_type": "images",
+                }
+            ],
+        },
     )
     plugin._edit_service = SimpleNamespace(
         edit=AsyncMock(return_value=Path("edited.png"))

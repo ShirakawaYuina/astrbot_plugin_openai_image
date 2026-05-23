@@ -27,6 +27,8 @@ def test_resolve_active_image_provider_uses_dropdown_selected_provider_id():
                     "base_url": "https://backup.example.com/v1",
                     "api_key": "backup-key",
                     "proxy_url": "http://127.0.0.1:7891",
+                    "model": "gpt-backup",
+                    "endpoint_type": "responses",
                 },
                 {
                     "provider_id": "primary",
@@ -34,6 +36,8 @@ def test_resolve_active_image_provider_uses_dropdown_selected_provider_id():
                     "base_url": " https://primary.example.com/v1/ ",
                     "api_key": " primary-key ",
                     "proxy_url": " http://127.0.0.1:7890 ",
+                    "model": " gpt-image-primary ",
+                    "endpoint_type": " images ",
                 },
             ]
         }
@@ -43,22 +47,53 @@ def test_resolve_active_image_provider_uses_dropdown_selected_provider_id():
     assert provider.base_url == "https://primary.example.com/v1"
     assert provider.api_key == "primary-key"
     assert provider.proxy_url == "http://127.0.0.1:7890"
+    assert provider.model == "gpt-image-primary"
+    assert provider.endpoint_type == "images"
 
 
-def test_resolve_active_image_provider_falls_back_to_legacy_fields():
+def test_resolve_active_image_provider_uses_provider_local_defaults():
     module = _load_module()
 
     provider = module.resolve_active_image_provider(
         {
-            "base_url": "https://legacy.example.com/v1",
-            "api_key": "legacy-key",
+            "image_providers": [
+                {
+                    "provider_id": "default",
+                    "name": "默认供应商",
+                    "base_url": "https://default.example.com/v1",
+                    "api_key": "default-key",
+                }
+            ]
         }
     )
 
     assert provider.name == "默认供应商"
-    assert provider.base_url == "https://legacy.example.com/v1"
-    assert provider.api_key == "legacy-key"
+    assert provider.base_url == "https://default.example.com/v1"
+    assert provider.api_key == "default-key"
     assert provider.proxy_url == ""
+    assert provider.endpoint_type == "responses"
+    assert provider.model == "gpt-5.4-mini"
+
+
+def test_resolve_active_image_provider_rejects_unknown_provider_id():
+    module = _load_module()
+
+    try:
+        module.resolve_active_image_provider(
+            {
+                "active_provider_id": "missing",
+                "image_providers": [
+                    {
+                        "provider_id": "default",
+                        "base_url": "https://default.example.com/v1",
+                    }
+                ],
+            }
+        )
+    except ValueError as exc:
+        assert "未找到启用的图片供应商" in str(exc)
+    else:
+        raise AssertionError("启用供应商槽位不存在时应该抛出 ValueError")
 
 
 def test_resolve_active_image_provider_rejects_missing_base_url():
@@ -82,11 +117,16 @@ def test_config_schema_replaces_base_url_and_api_key_with_provider_list():
     assert "default" in schema["active_provider_id"]["options"]
     assert schema["image_providers"]["type"] == "template_list"
     assert "openai_compatible" in schema["image_providers"]["templates"]
+    assert "model" not in schema
+    assert "endpoint_type" not in schema
     provider_items = schema["image_providers"]["templates"]["openai_compatible"][
         "items"
     ]
     assert provider_items["proxy_url"]["type"] == "string"
     assert "供应商" in provider_items["proxy_url"]["hint"]
+    assert provider_items["model"]["type"] == "string"
+    assert provider_items["endpoint_type"]["default"] == "responses"
+    assert provider_items["endpoint_type"]["options"] == ["responses", "images"]
     assert "image_proxy_url" not in schema
     assert "prompt_optimizer_model" not in schema
     assert "prompt_optimizer_base_url" not in schema
