@@ -46,7 +46,7 @@ FIGURE_IMAGE_FILE_NAME = "robot_figure.png"
     PLUGIN_NAME,
     "Codex",
     "基于 OpenAI 兼容图片接口的图片生成与图片编辑插件。",
-    "0.6.45",
+    "0.6.47",
 )
 class OpenAIImagePlugin(Star):
     """OpenAI 图片插件。"""
@@ -150,6 +150,17 @@ class OpenAIImagePlugin(Star):
 
         event.should_call_llm(True)
         await self._handle_figure_command(event)
+
+    @filter.command("oaishow")
+    async def show_figure_image_command(
+        self,
+        event: AstrMessageEvent,
+        _prompt: str = "",
+    ) -> None:
+        """展示当前已设置的机器人形象参考图。"""
+
+        event.should_call_llm(True)
+        await self._handle_show_figure_command(event)
 
     @filter.llm_tool(name="openai_generate_image")
     async def openai_generate_image_tool(
@@ -402,6 +413,33 @@ class OpenAIImagePlugin(Star):
 
         logger.info("[OpenAIImage][figure] 机器人形象图已更新 path=%s", figure_path)
         await event.send(event.plain_result("机器人形象图已更新。"))
+
+    async def _handle_show_figure_command(self, event: AstrMessageEvent) -> None:
+        """处理 `/oaishow` 命令，将当前机器人形象图发送给用户查看。"""
+
+        figure_path = self._get_figure_image_path()
+        if not figure_path.is_file():
+            await event.send(
+                event.plain_result(
+                    "尚未设置机器人形象图，请先在同条消息带图或回复图片后执行 /oaifigure。"
+                )
+            )
+            return
+
+        try:
+            # 展示命令复用统一图片回传器，保证 base64/url 两种发送模式表现一致。
+            await self.presenter.send_images(event, [figure_path])
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[OpenAIImage][figure] 机器人形象图展示失败 path=%s error=%s",
+                figure_path,
+                exc,
+                exc_info=True,
+            )
+            await event.send(event.plain_result(f"机器人形象图展示失败：{exc}"))
+            return
+
+        logger.info("[OpenAIImage][figure] 机器人形象图已展示 path=%s", figure_path)
 
     async def _execute_generate_flow(
         self,

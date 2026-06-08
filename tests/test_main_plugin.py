@@ -464,6 +464,39 @@ async def test_figure_command_requires_image():
 
 
 @pytest.mark.asyncio
+async def test_show_figure_command_requires_saved_figure(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    module.get_astrbot_plugin_data_path = lambda: str(tmp_path)
+    plugin.presenter = SimpleNamespace(send_images=AsyncMock())
+    event = _make_event()
+
+    await plugin._handle_show_figure_command(event)
+
+    event.send.assert_awaited_once()
+    assert "尚未设置机器人形象图" in event._sent_messages[0]
+    assert "/oaifigure" in event._sent_messages[0]
+    plugin.presenter.send_images.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_show_figure_command_sends_saved_figure(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    module.get_astrbot_plugin_data_path = lambda: str(tmp_path)
+    figure_path = plugin._get_figure_image_path()
+    figure_path.parent.mkdir(parents=True, exist_ok=True)
+    figure_path.write_bytes(b"fake-figure")
+    plugin.presenter = SimpleNamespace(send_images=AsyncMock())
+    event = _make_event()
+
+    await plugin._handle_show_figure_command(event)
+
+    plugin.presenter.send_images.assert_awaited_once_with(event, [figure_path])
+    event.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_robot_figure_llm_tool_requires_saved_figure(tmp_path: Path):
     module = _load_module()
     plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
@@ -997,6 +1030,7 @@ def test_plugin_registers_command_and_tool_names():
     assert '@filter.command("oaiedit")' in source
     assert '@filter.command("oaiqlogo")' in source
     assert '@filter.command("oaifigure")' in source
+    assert '@filter.command("oaishow")' in source
     assert '@filter.llm_tool(name="openai_generate_image")' in source
     assert '@filter.llm_tool(name="openai_edit_image")' in source
     assert '@filter.llm_tool(name="openai_edit_robot_figure_image")' in source

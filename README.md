@@ -7,6 +7,7 @@
 - `/oaiedit [数量] [--size 尺寸] <提示词>`，支持同一来源内多张输入图
 - `/oaiqlogo [数量] [--size 尺寸] @用户 <提示词>`
 - `/oaifigure`，在同条消息带图或回复图片时设置/更新机器人形象图
+- `/oaishow`，展示当前已设置的机器人形象图
 - 可在每个图片接口供应商中单独配置 `responses` 或 `images` 端点，`images` 模式支持 `/images/generations` 与 `/images/edits`
 - 兼容上游返回 `b64_json` 或 `url` 的图片结果，URL 结果会先下载到本地缓存再发送
 - 支持配置默认输出尺寸，也可通过命令参数临时覆盖
@@ -22,7 +23,7 @@
 
 ## 机器人形象图
 
-使用 `/oaifigure` 设置机器人形象图。形象图会保存到 `data/plugin_data/astrbot_plugin_openai_image/figure/robot_figure.png`，重复设置会覆盖旧图。
+使用 `/oaifigure` 设置机器人形象图，使用 `/oaishow` 查看当前已设置的形象图。形象图会保存到 `data/plugin_data/astrbot_plugin_openai_image/figure/robot_figure.png`，重复设置会覆盖旧图。
 
 当 LLM 判断用户想生成机器人自己、Bot 形象、助手形象、看板娘、机器人头像/立绘/表情包等相关图像时，可自动调用 `openai_edit_robot_figure_image`，插件会使用已保存的形象图作为参考图执行图片编辑。
 
