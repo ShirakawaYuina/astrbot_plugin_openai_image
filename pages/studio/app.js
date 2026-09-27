@@ -10,6 +10,14 @@ const PAGE_I18N_KEY = "pages.studio";
 const PROMPT_OPTIMIZER_API_KEY_MASK = "********";
 const GALLERY_PAGE_SIZE = 24;
 const REFERENCE_IMAGE_PREVIEW_URLS = new WeakMap();
+// 浮层缩放范围：下限是「适应屏幕」，保证图片永远不会比整屏还小。
+const LIGHTBOX_MIN_ZOOM = 1;
+const LIGHTBOX_MAX_ZOOM = 8;
+const LIGHTBOX_WHEEL_FACTOR = 1.2;
+// 适应屏幕时四周留出的呼吸空间，与缩放倍率无关，只影响 fit 尺寸。
+const LIGHTBOX_FIT_PADDING = 32;
+// 判定为拖拽的最小位移。超过它就不该触发点击关闭。
+const LIGHTBOX_DRAG_THRESHOLD = 4;
 
 const state = {
   images: [],
@@ -366,17 +374,68 @@ async function selectImage(name) {
 
 // iframe 的 sandbox 不含 allow-popups，window.open 必定返回 null，
 // 所以原图只能在页内全屏浮层里展示，点击任意处或按 Esc 关闭。
+// 缩放以「适应屏幕」为 1 倍（下限），读数显示相对原始像素的真实百分比。
+const lightbox = {
+  zoom: 1,
+  fitScale: 1,
+  naturalWidth: 0,
+  naturalHeight: 0,
+  drag: null,
+  suppressClick: false,
+};
+
+function lightboxFitScale() {
+  const stage = $("lightboxStage");
+  const availableWidth = stage.clientWidth - LIGHTBOX_FIT_PADDING;
+  const availableHeight = stage.clientHeight - LIGHTBOX_FIT_PADDING;
+  if (!lightbox.naturalWidth || !lightbox.naturalHeight) return 1;
+  // 不放大到超过原始尺寸，避免小图被拉糊。
+  return Math.min(
+    availableWidth / lightbox.naturalWidth,
+    availableHeight / lightbox.naturalHeight,
+    1,
+  );
+}
+
+function applyLightboxZoom() {
+  const scale = lightbox.fitScale * lightbox.zoom;
+  $("lightboxImage").style.width = `${Math.round(lightbox.naturalWidth * scale)}px`;
+  $("lightboxImage").style.height = `${Math.round(
+    lightbox.naturalHeight * scale,
+  )}px`;
+  $("lightboxZoomLabel").textContent = `${Math.round(scale * 100)}%`;
+}
+
+function layoutLightbox() {
+  lightbox.fitScale = lightboxFitScale();
+  applyLightboxZoom();
+}
+
 function showOriginalImage(image) {
   if (!image || !image.data_url) return;
-  $("lightboxImage").src = image.data_url;
-  $("lightboxImage").alt = image.name;
+  const lightboxImage = $("lightboxImage");
+  lightboxImage.src = image.data_url;
+  lightboxImage.alt = image.name;
+  lightbox.zoom = LIGHTBOX_MIN_ZOOM;
   $("lightbox").classList.remove("hidden");
+
+  if (lightboxImage.complete && lightboxImage.naturalWidth) {
+    layoutLightbox();
+    return;
+  }
+  // data URL 也可能不是同步解码完成的，必须等 load 才知道原始尺寸。
+  lightboxImage.addEventListener("load", layoutLightbox, { once: true });
 }
 
 function hideLightbox() {
   $("lightbox").classList.add("hidden");
   $("lightboxImage").removeAttribute("src");
   $("lightboxImage").alt = "";
+  lightbox.zoom = LIGHTBOX_MIN_ZOOM;
+  lightbox.drag = null;
+  lightbox.suppressClick = false;
+  $("lightboxImage").classList.remove("is-dragging");
+  $("lightboxStage").scrollTo(0, 0);
 }
 
 async function deleteImageByName(name) {
@@ -633,9 +692,85 @@ $("previewBox").addEventListener("dblclick", () =>
 $("viewOriginalBtn").addEventListener("click", () =>
   showOriginalImage(state.selected),
 );
-$("lightbox").addEventListener("click", hideLightbox);
+// 拖拽结束后浏览器仍会派发 click，必须吞掉这一次，否则拖完图就被误关。
+$("lightbox").addEventListener("click", () => {
+  if (lightbox.suppressClick) {
+    lightbox.suppressClick = false;
+    return;
+  }
+  hideLightbox();
+});
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") hideLightbox();
+});
+
+// 滚轮缩放必须注册为非 passive，否则 event.preventDefault() 会被浏览器忽略，
+// 结果是浮层跟着页面一起滚动而不是缩放图片。
+$("lightboxStage").addEventListener(
+  "wheel",
+  (event) => {
+    event.preventDefault();
+    const stage = $("lightboxStage");
+    const rect = stage.getBoundingClientRect();
+    const cursorX = event.clientX - rect.left;
+    const cursorY = event.clientY - rect.top;
+    // 先记下光标在可滚动内容里的相对位置，改完尺寸再按新内容尺寸还原，
+    // 这样光标下的像素保持不动。
+    const anchorX = (stage.scrollLeft + cursorX) / Math.max(1, stage.scrollWidth);
+    const anchorY = (stage.scrollTop + cursorY) / Math.max(1, stage.scrollHeight);
+
+    lightbox.zoom = Math.min(
+      LIGHTBOX_MAX_ZOOM,
+      Math.max(
+        LIGHTBOX_MIN_ZOOM,
+        lightbox.zoom *
+          (event.deltaY < 0 ? LIGHTBOX_WHEEL_FACTOR : 1 / LIGHTBOX_WHEEL_FACTOR),
+      ),
+    );
+    applyLightboxZoom();
+
+    stage.scrollLeft = anchorX * stage.scrollWidth - cursorX;
+    stage.scrollTop = anchorY * stage.scrollHeight - cursorY;
+  },
+  { passive: false },
+);
+
+// 未放大时不启动拖拽，否则会挡住点击遮罩关闭。
+$("lightboxStage").addEventListener("pointerdown", (event) => {
+  if (lightbox.zoom <= LIGHTBOX_MIN_ZOOM) return;
+  const stage = $("lightboxStage");
+  lightbox.drag = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    scrollLeft: stage.scrollLeft,
+    scrollTop: stage.scrollTop,
+  };
+  stage.setPointerCapture(event.pointerId);
+  $("lightboxImage").classList.add("is-dragging");
+});
+
+$("lightboxStage").addEventListener("pointermove", (event) => {
+  if (!lightbox.drag || lightbox.drag.pointerId !== event.pointerId) return;
+  const deltaX = event.clientX - lightbox.drag.startX;
+  const deltaY = event.clientY - lightbox.drag.startY;
+  if (
+    !lightbox.suppressClick &&
+    Math.hypot(deltaX, deltaY) > LIGHTBOX_DRAG_THRESHOLD
+  ) {
+    lightbox.suppressClick = true;
+  }
+  const stage = $("lightboxStage");
+  stage.scrollLeft = lightbox.drag.scrollLeft - deltaX;
+  stage.scrollTop = lightbox.drag.scrollTop - deltaY;
+});
+
+["pointerup", "pointercancel"].forEach((eventName) => {
+  $("lightboxStage").addEventListener(eventName, (event) => {
+    if (!lightbox.drag || lightbox.drag.pointerId !== event.pointerId) return;
+    lightbox.drag = null;
+    $("lightboxImage").classList.remove("is-dragging");
+  });
 });
 
 $("deleteImageBtn").addEventListener("click", () => {
@@ -649,6 +784,8 @@ $("deleteImageBtn").addEventListener("click", () => {
 window.addEventListener("resize", () => {
   if (state.activeTab === "gallery") renderGallery();
   resizePromptTextareas();
+  // 浮层开着时窗口尺寸变了要重算适应屏幕的基准倍率。
+  if (!$("lightbox").classList.contains("hidden")) layoutLightbox();
 });
 
 $("generateForm").addEventListener("submit", async (event) => {

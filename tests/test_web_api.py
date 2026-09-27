@@ -816,36 +816,72 @@ def test_page_never_opens_a_new_window():
     assert '$("lightbox").classList.remove("hidden")' in app_js
 
 
-def test_lightbox_image_always_fits_its_box():
-    """浮层里的原图必须完整显示，竖图不能溢出被裁切。
+def test_lightbox_stage_scales_images_without_clipping():
+    """浮层必须能完整显示竖图，并且放大后四个方向都滚得到。
 
-    `.lightbox` 用的是 `display: grid; place-items: center` 且没有声明
-    `grid-template-rows`，隐式行轨道是 auto、高度不确定。grid item 的
-    `max-height: 100%` 相对网格区域解析，遇到不确定高度会按 none 处理，
-    于是竖图按原始像素高度渲染并溢出浮层。改用 width/height 100% 加
-    object-fit: contain，让图片铺满浮层再等比内缩，不依赖百分比解析。
+    两条硬约束：
+    1. `.lightbox` 必须显式声明 grid-template-rows: minmax(0, 1fr)。固定定位虽然
+       让容器高度确定，但隐式 auto 轨道仍是不确定高度，grid item 的百分比高度会
+       按 none 处理，竖图就会按原始像素高度溢出并被 iframe 裁掉。
+    2. 滚动容器居中必须用 margin: auto。place-items/align-items 居中会让超出
+       容器的图片左上角和右上角滚不到，只能看到中间部分。
     """
     style_css = (ROOT / "pages" / "studio" / "style.css").read_text(encoding="utf-8")
+    app_js = (ROOT / "pages" / "studio" / "app.js").read_text(encoding="utf-8")
     lightbox = re.search(r"\.lightbox\s*\{(?P<body>[^}]+)\}", style_css)
+    stage = re.search(r"\.lightbox-stage\s*\{(?P<body>[^}]+)\}", style_css)
     image_rule = re.search(r"\.lightbox-image\s*\{(?P<body>[^}]+)\}", style_css)
     assert lightbox is not None
+    assert stage is not None
     assert image_rule is not None
 
-    lightbox_body = lightbox.group("body")
+    assert "grid-template-rows: minmax(0, 1fr);" in lightbox.group("body")
+
+    stage_body = stage.group("body")
     image_body = image_rule.group("body")
 
-    # 浮层不再用 grid 自动轨道，避免百分比高度解析不确定。
-    assert "display: grid" not in lightbox_body
-    assert "place-items" not in lightbox_body
+    assert "overflow: auto;" in stage_body
+    assert "min-height: 0;" in stage_body
+    assert "place-items" not in stage_body
+    assert "align-items" not in stage_body
+    assert "margin: auto;" in image_body
+    # flex 默认会压缩图片，JS 算出的显式宽高会被忽略。
+    assert "flex: 0 0 auto;" in image_body
+    # 百分比尺寸和 object-fit 都属于「适应屏幕」阶段的老做法，
+    # 现在宽高由 JS 按缩放倍率写入，这些声明必须不存在。
+    assert "width: 100%;" not in image_body
+    assert "height: 100%;" not in image_body
+    assert "object-fit" not in image_body
+    # max-width/max-height 只能写成 none 用来清掉继承约束；
+    # 一旦写成百分比就会重新把 JS 算出的尺寸 clamp 掉。
+    assert "max-width: none;" in image_body
+    assert "max-height: none;" in image_body
+    assert "max-width: 100%" not in image_body
+    assert "max-height: 100%" not in image_body
+    # 宽高必须成对地从原始尺寸和倍率算出，比例才不会失真。
+    assert (
+        "${Math.round(lightbox.naturalWidth * scale)}px" in app_js
+        and "${Math.round(" in app_js
+    )
+    assert "lightbox.naturalHeight * scale" in app_js
 
-    assert "width: 100%;" in image_body
-    assert "height: 100%;" in image_body
-    assert "object-fit: contain;" in image_body
-    # 这条正是让竖图溢出的声明，必须换成上面的 width/height 组合。
-    assert "max-height" not in image_body
-    # 圆角和阴影会包住整个浮层盒子而不是可见图片，画出来会是一圈多余的边框。
-    assert "border-radius" not in image_body
-    assert "box-shadow" not in image_body
+
+def test_lightbox_wheel_zoom_is_not_passive():
+    """滚轮缩放必须注册为非 passive，否则 preventDefault 会被浏览器忽略。"""
+    app_js = (ROOT / "pages" / "studio" / "app.js").read_text(encoding="utf-8")
+    stage = (ROOT / "pages" / "studio" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="lightboxStage"' in stage
+    assert 'id="lightboxZoomLabel"' in stage
+    assert re.search(r'addEventListener\(\s*"wheel"', app_js)
+    assert "passive: false" in app_js
+    # 缩放范围必须有上下限：下限保证图片不会比整屏还小，上限避免撑爆布局。
+    assert "LIGHTBOX_MIN_ZOOM = 1;" in app_js
+    assert "LIGHTBOX_MAX_ZOOM = 8;" in app_js
+    # 未放大时不应该进入拖拽平移，否则会挡住点击关闭。
+    assert "pointerdown" in app_js
+    # 拖拽结束浏览器仍会派发 click，必须吞掉否则拖完就被误关。
+    assert "suppressClick" in app_js
 
 
 def test_page_i18n_file_covers_all_used_keys():

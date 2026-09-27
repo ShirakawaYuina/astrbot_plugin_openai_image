@@ -740,23 +740,55 @@ textarea {
 }
 
 /* 承载页面的 iframe sandbox 不含 allow-popups，window.open 永远打不开新标签页，
-   因此“查看原图”只能在页内用全屏浮层展示。 */
+   因此“查看原图”只能在页内用全屏浮层展示。
+   grid-template-rows 必须显式给 minmax(0, 1fr)：固定定位虽然让容器高度确定，
+   但隐式 auto 轨道仍会让百分比高度解析失败。 */
 .lightbox {
   position: fixed;
   inset: 0;
   z-index: 40;
-  padding: 32px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
   background: rgb(8 12 20 / 90%);
-  cursor: zoom-out;
 }
 
-/* 图片铺满浮层再靠 object-fit 等比内缩。不要改成 max-height: 100%：
-   浮层不是 flex/grid 的确定高度轨道，百分比高度会解析失败导致竖图溢出。 */
+/* 滚动容器负责放大后的平移。用 margin: auto 而不是 place-items/align-items 居中，
+   因为居中会让超出容器的图片左上角和右上角滚不到。 */
+.lightbox-stage {
+  display: flex;
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 宽高由 JS 按缩放倍率写入。max-width/max-height 会破坏缩放，
+   flex: 0 0 auto 防止 flex 容器把图片压回容器尺寸。 */
 .lightbox-image {
   display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  flex: 0 0 auto;
+  margin: auto;
+  max-width: none;
+  max-height: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.lightbox-image.is-dragging {
+  cursor: grabbing;
+}
+
+.lightbox-zoom-label {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 88%);
+  color: #17202f;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .lightbox-close {
