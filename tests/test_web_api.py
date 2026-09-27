@@ -816,6 +816,38 @@ def test_page_never_opens_a_new_window():
     assert '$("lightbox").classList.remove("hidden")' in app_js
 
 
+def test_lightbox_image_always_fits_its_box():
+    """浮层里的原图必须完整显示，竖图不能溢出被裁切。
+
+    `.lightbox` 用的是 `display: grid; place-items: center` 且没有声明
+    `grid-template-rows`，隐式行轨道是 auto、高度不确定。grid item 的
+    `max-height: 100%` 相对网格区域解析，遇到不确定高度会按 none 处理，
+    于是竖图按原始像素高度渲染并溢出浮层。改用 width/height 100% 加
+    object-fit: contain，让图片铺满浮层再等比内缩，不依赖百分比解析。
+    """
+    style_css = (ROOT / "pages" / "studio" / "style.css").read_text(encoding="utf-8")
+    lightbox = re.search(r"\.lightbox\s*\{(?P<body>[^}]+)\}", style_css)
+    image_rule = re.search(r"\.lightbox-image\s*\{(?P<body>[^}]+)\}", style_css)
+    assert lightbox is not None
+    assert image_rule is not None
+
+    lightbox_body = lightbox.group("body")
+    image_body = image_rule.group("body")
+
+    # 浮层不再用 grid 自动轨道，避免百分比高度解析不确定。
+    assert "display: grid" not in lightbox_body
+    assert "place-items" not in lightbox_body
+
+    assert "width: 100%;" in image_body
+    assert "height: 100%;" in image_body
+    assert "object-fit: contain;" in image_body
+    # 这条正是让竖图溢出的声明，必须换成上面的 width/height 组合。
+    assert "max-height" not in image_body
+    # 圆角和阴影会包住整个浮层盒子而不是可见图片，画出来会是一圈多余的边框。
+    assert "border-radius" not in image_body
+    assert "box-shadow" not in image_body
+
+
 def test_page_i18n_file_covers_all_used_keys():
     i18n_data = json.loads(
         (ROOT / ".astrbot-plugin" / "i18n" / "zh-CN.json").read_text(encoding="utf-8")
