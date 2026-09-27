@@ -390,7 +390,7 @@ class ImageStudioApi:
             "获取历史图库分页数据与缩略图",
         )
         context.register_web_api(
-            f"/{PLUGIN_NAME}/image/<name>",
+            f"/{PLUGIN_NAME}/image",
             self.get_image,
             ["GET"],
             "获取单张图片的完整内容",
@@ -502,16 +502,18 @@ class ImageStudioApi:
             }
         )
 
-    async def get_image(self, name: str) -> Any:
+    async def get_image(self) -> Any:
         """返回单张图片的完整 base64 内容，用于大图预览。
-
-        Args:
-            name: 缓存图片文件名，由 Dashboard 路由解析后传入。
 
         Returns:
             图片元数据加 data_url 字段；图片不存在时返回 404。
+
+        Note:
+            文件名必须走 query 参数。bridge 的 apiGet 只能把 params 拼到 query string，
+            endpoint 本身决定 path，注册 `image/<name>` 这类路径参数路由永远匹配不上。
         """
 
+        name = str(request.query.get("name", "") or "").strip()
         try:
             image_path = self.library.resolve_image_path(name)
         except FileNotFoundError:

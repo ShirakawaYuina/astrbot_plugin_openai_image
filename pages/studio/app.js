@@ -330,13 +330,24 @@ async function selectImage(name) {
   $("detailType").textContent = image.mime_type;
   $("detailSize").textContent = formatBytes(image.size_bytes);
   $("detailTime").textContent = new Date(image.modified_at * 1000).toLocaleString();
-  $("viewOriginalBtn").disabled = false;
+  $("viewOriginalBtn").disabled = true;
   $("deleteImageBtn").disabled = false;
   updateGallerySelection();
 
   // 图库缩略图长边只有 768px，大图预览需要单独取一次原图 data URL。
-  const fullImage = await fetchFullImage(name);
+  let fullImage;
+  try {
+    fullImage = await fetchFullImage(name);
+  } catch (error) {
+    // 取原图失败时必须把详情栏和预览区从“读取中”切走，否则看上去像页面卡死。
+    $("detailGenerationSize").textContent = t("loadFailed", "加载失败");
+    previewBox.textContent = t("loadFailed", "原图加载失败");
+    showToast(error.message);
+    return;
+  }
+
   image.data_url = fullImage.data_url;
+  $("viewOriginalBtn").disabled = false;
   const previewImage = document.createElement("img");
   previewImage.alt = image.name;
   previewImage.addEventListener(

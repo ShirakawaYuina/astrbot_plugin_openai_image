@@ -172,7 +172,7 @@ def test_register_declares_expected_routes(tmp_path: Path):
 
     assert registered == [
         (f"/{module.PLUGIN_NAME}/images", ["GET"]),
-        (f"/{module.PLUGIN_NAME}/image/<name>", ["GET"]),
+        (f"/{module.PLUGIN_NAME}/image", ["GET"]),
         (f"/{module.PLUGIN_NAME}/image/delete", ["POST"]),
         (f"/{module.PLUGIN_NAME}/generate", ["POST"]),
         (f"/{module.PLUGIN_NAME}/edit", ["POST"]),
@@ -180,6 +180,41 @@ def test_register_declares_expected_routes(tmp_path: Path):
         (f"/{module.PLUGIN_NAME}/prompt-optimizer-settings", ["GET"]),
         (f"/{module.PLUGIN_NAME}/prompt-optimizer-settings", ["POST"]),
     ]
+
+
+def test_every_bridge_call_matches_a_registered_route(tmp_path: Path):
+    """用 Dashboard 真实的路由匹配函数校验页面与后端的契约。
+
+    bridge 的 apiGet/apiPost 只能把参数放进 query string，endpoint 本身决定
+    path。如果后端注册了带 `<name>` 路径参数的路由，而页面只调用
+    apiGet("image", {name})，path 会是 `<plugin>/image` 而不是 `<plugin>/image/<name>`，
+    Dashboard 直接返回“未找到该路由”，页面表现为预览一直停在“读取中”。
+    """
+    match_registered_web_api = pytest.importorskip(
+        "astrbot.dashboard.api.plugins"
+    )._match_registered_web_api
+
+    registered: list[tuple[str, object, list[str], str]] = []
+
+    class FakeContext:
+        def register_web_api(self, route, handler, methods, desc):
+            registered.append((route, handler, methods, desc))
+
+    api, _cache_dir = _build_studio_api(
+        tmp_path, plugin=SimpleNamespace(context=FakeContext())
+    )
+    api.register()
+
+    app_js = (ROOT / "pages" / "studio" / "app.js").read_text(encoding="utf-8")
+    calls = re.findall(r'bridge\.api(Get|Post)\("([^"]+)"', app_js)
+    assert calls, "未能从 app.js 中解析出任何 bridge 调用"
+
+    for action, endpoint in calls:
+        plugin_path = f"{_load_module().PLUGIN_NAME}/{endpoint}"
+        matched = match_registered_web_api(registered, plugin_path, action)
+        assert matched is not None, (
+            f"bridge.{action}('{endpoint}') 请求的 {plugin_path} 没有匹配的已注册路由"
+        )
 
 
 @pytest.mark.asyncio
@@ -238,16 +273,21 @@ async def test_get_image_returns_full_data_url_and_404(tmp_path: Path):
     api, cache_dir = _build_studio_api(tmp_path)
     _write_png(cache_dir / "demo.png")
 
-    with _bind_request():
-        payload = _read_json(await api.get_image("demo.png"))
+    with _bind_request(query={"name": "demo.png"}):
+        payload = _read_json(await api.get_image())
 
     assert payload["image"]["name"] == "demo.png"
     assert payload["image"]["data_url"].startswith("data:image/png;base64,")
 
-    with _bind_request():
-        missing = await api.get_image("missing.png")
+    with _bind_request(query={"name": "missing.png"}):
+        missing = await api.get_image()
 
     assert missing.status_code == 404
+
+    with _bind_request():
+        without_name = await api.get_image()
+
+    assert without_name.status_code == 404
 
 
 @pytest.mark.asyncio
