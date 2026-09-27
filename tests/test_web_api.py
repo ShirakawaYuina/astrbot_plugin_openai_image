@@ -884,6 +884,49 @@ def test_lightbox_wheel_zoom_is_not_passive():
     assert "suppressClick" in app_js
 
 
+def test_lightbox_zoom_scale_comes_from_the_real_image():
+    """缩放基准必须来自图片的真实像素尺寸，不能停留在初始的 0。
+
+    lightbox 状态里的 naturalWidth/naturalHeight 初始为 0。若 layoutLightbox
+    没有先把 img.naturalWidth/naturalHeight 写回状态，lightboxFitScale() 会命中
+    `if (!naturalWidth) return 1` 的早退分支，applyLightboxZoom() 于是把
+    `0 * 1` 写成 width/height，图片变成 0x0 完全不可见。
+    """
+    app_js = (ROOT / "pages" / "studio" / "app.js").read_text(encoding="utf-8")
+
+    layout = re.search(
+        r"function layoutLightbox\(\)\s*\{(?P<body>.*?)\n\}", app_js, re.S
+    )
+    assert layout is not None, "app.js 缺少 layoutLightbox"
+    layout_body = layout.group("body")
+
+    assert "lightbox.naturalWidth = " in layout_body
+    assert "lightbox.naturalHeight = " in layout_body
+    # 赋值必须发生在计算 fit 之前，否则 fit 读到的还是上一次的 0。
+    assert layout_body.index("naturalWidth") < layout_body.index("lightboxFitScale()")
+
+    # applyLightboxZoom 必须拒绝在尺寸未知时写样式，避免再次产出 0x0。
+    apply_zoom = re.search(
+        r"function applyLightboxZoom\(\)\s*\{(?P<body>.*?)\n\}", app_js, re.S
+    )
+    assert apply_zoom is not None
+    assert re.search(
+        r"if \(!lightbox\.naturalWidth \|\| !lightbox\.naturalHeight\) return", 
+        apply_zoom.group("body"),
+    )
+
+    # 打开时先显示浮层再设置 src，关闭时清掉内联尺寸，避免沿用上一次的 0px。
+    assert re.search(
+        r"classList\.remove\(\"hidden\"\);(?s:.*?)src = image\.data_url;",
+        app_js,
+    )
+    hide = re.search(r"function hideLightbox\(\)\s*\{(?P<body>.*?)\n\}", app_js, re.S)
+    assert hide is not None
+    assert 'removeAttribute("src")' in hide.group("body")
+    assert "style.width" in hide.group("body")
+    assert "style.height" in hide.group("body")
+
+
 def test_page_i18n_file_covers_all_used_keys():
     i18n_data = json.loads(
         (ROOT / ".astrbot-plugin" / "i18n" / "zh-CN.json").read_text(encoding="utf-8")

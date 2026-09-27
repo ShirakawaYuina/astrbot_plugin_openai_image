@@ -398,6 +398,8 @@ function lightboxFitScale() {
 }
 
 function applyLightboxZoom() {
+  // 尺寸未知时绝不能写样式：0 会被当成合法的 width/height，图片就变成 0x0 不可见。
+  if (!lightbox.naturalWidth || !lightbox.naturalHeight) return;
   const scale = lightbox.fitScale * lightbox.zoom;
   $("lightboxImage").style.width = `${Math.round(lightbox.naturalWidth * scale)}px`;
   $("lightboxImage").style.height = `${Math.round(
@@ -407,6 +409,10 @@ function applyLightboxZoom() {
 }
 
 function layoutLightbox() {
+  // 必须先把图片的真实像素尺寸写回状态，否则下面的 fit 会读到初始的 0。
+  const lightboxImage = $("lightboxImage");
+  lightbox.naturalWidth = lightboxImage.naturalWidth;
+  lightbox.naturalHeight = lightboxImage.naturalHeight;
   lightbox.fitScale = lightboxFitScale();
   applyLightboxZoom();
 }
@@ -414,24 +420,42 @@ function layoutLightbox() {
 function showOriginalImage(image) {
   if (!image || !image.data_url) return;
   const lightboxImage = $("lightboxImage");
+  // 先显示浮层再设置 src，让图片在有布局盒的状态下加载并解码。
+  $("lightbox").classList.remove("hidden");
+  lightbox.zoom = LIGHTBOX_MIN_ZOOM;
+  lightbox.naturalWidth = 0;
+  lightbox.naturalHeight = 0;
+  lightboxImage.style.width = "";
+  lightboxImage.style.height = "";
   lightboxImage.src = image.data_url;
   lightboxImage.alt = image.name;
-  lightbox.zoom = LIGHTBOX_MIN_ZOOM;
-  $("lightbox").classList.remove("hidden");
+
+  const whenSized = () => {
+    layoutLightbox();
+    if (lightbox.naturalWidth) return;
+    // data URL 也不保证 load 回调里就拿到尺寸，解码完成后再试一次。
+    lightboxImage
+      .decode()
+      .catch(() => {})
+      .finally(layoutLightbox);
+  };
 
   if (lightboxImage.complete && lightboxImage.naturalWidth) {
-    layoutLightbox();
+    whenSized();
     return;
   }
-  // data URL 也可能不是同步解码完成的，必须等 load 才知道原始尺寸。
-  lightboxImage.addEventListener("load", layoutLightbox, { once: true });
+  lightboxImage.addEventListener("load", whenSized, { once: true });
 }
 
 function hideLightbox() {
   $("lightbox").classList.add("hidden");
   $("lightboxImage").removeAttribute("src");
   $("lightboxImage").alt = "";
+  $("lightboxImage").style.width = "";
+  $("lightboxImage").style.height = "";
   lightbox.zoom = LIGHTBOX_MIN_ZOOM;
+  lightbox.naturalWidth = 0;
+  lightbox.naturalHeight = 0;
   lightbox.drag = null;
   lightbox.suppressClick = false;
   $("lightboxImage").classList.remove("is-dragging");
