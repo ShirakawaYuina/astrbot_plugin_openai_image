@@ -269,6 +269,19 @@ data/plugins/astrbot_plugin_openai_image/
 
 - 配置页中不再出现五项独立翻译配置
 - 配置页不显示“英文扩写模型”或其他提示词改写相关配置项
+- 不再提供独立网页后台的开关、监听地址、端口和登录密码配置项
+
+### 7.4 内置图片工作台页面
+
+- 页面固定放在插件目录 `pages/studio/`，随插件一起启用，鉴权沿用 Dashboard 登录态
+- 后端接口通过 `context.register_web_api()` 注册，路由统一以 `/{插件名}` 开头
+- 页面运行在 Dashboard 的受限 iframe 中，不能直接 `fetch` 鉴权接口，所有调用都经 `window.AstrBotPluginPage` bridge
+- 受限 iframe 没有 `localStorage` 和 `IndexedDB`，图库分页、筛选等状态只保存在页面内存中
+- 图库列表由后端完成筛选、排序和分页，并内联服务端生成的 webp 缩略图；缩略图缓存落在 `data/plugin_data/astrbot_plugin_openai_image/webui_thumbnails`
+- 大图预览和原图查看由后端以原图 base64 data URL 返回
+- 受限 iframe 的 `upload()` 一次只能传单个文件，因此多参考图编辑由页面转成 data URL 后随 JSON 提交
+- 页面亮暗主题跟随 WebUI，通过 `<html data-theme>` 的 CSS 变量实现
+- 文案统一放在 `.astrbot-plugin/i18n/zh-CN.json` 的 `pages.studio` 下，通过 `bridge.t()` 读取
 
 ---
 
@@ -677,8 +690,7 @@ YYYYMMDD_HHMMSS_<随机短串>.<扩展名>
 
 ## 21. 后续扩展方向
 
-- 多图输入编辑
 - 多提供商兜底链路
 - 图片结果重发命令
 - 用户级并发限制
-- WebUI 可视化调试面板
+- WebUI 任务队列与耗时可视化

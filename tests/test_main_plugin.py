@@ -117,7 +117,7 @@ def test_rebuild_runtime_dependencies_passes_image_proxy_to_gateway():
     assert plugin._image_gateway._proxy_url == "http://127.0.0.1:7890"
 
 
-def test_rebuild_runtime_dependencies_prepares_web_admin_server():
+def test_rebuild_runtime_dependencies_prepares_builtin_page_api():
     module = _load_module()
     plugin = module.OpenAIImagePlugin(
         context=SimpleNamespace(),
@@ -131,17 +131,47 @@ def test_rebuild_runtime_dependencies_prepares_web_admin_server():
                     "api_key": "demo-key",
                 }
             ],
-            "web_admin_enabled": True,
-            "web_admin_port": 7001,
-            "web_admin_password": "secret",
         },
     )
 
     plugin._rebuild_runtime_dependencies()
 
-    assert plugin._web_admin_server is not None
-    assert plugin._web_admin_server.settings.enabled is True
-    assert plugin._web_admin_server.settings.port == 7001
+    assert plugin._studio_api is not None
+    assert plugin._studio_api.plugin is plugin
+
+
+@pytest.mark.asyncio
+async def test_initialize_registers_builtin_page_web_apis():
+    module = _load_module()
+    registered: list[tuple[str, list[str]]] = []
+
+    class FakeContext:
+        def register_web_api(self, route, handler, methods, desc):
+            registered.append((route, methods))
+
+    plugin = module.OpenAIImagePlugin(
+        context=FakeContext(),
+        config={
+            "image_providers": [
+                {
+                    "__template_key": "openai_compatible",
+                    "provider_id": "default",
+                    "name": "默认供应商",
+                    "base_url": "https://example.com/v1",
+                    "api_key": "demo-key",
+                }
+            ],
+        },
+    )
+
+    await plugin.initialize()
+
+    # 完整路由清单在 test_web_api.py 中断言，这里只确认 initialize 确实完成了注册。
+    assert plugin._studio_api is not None
+    assert len(registered) == 8
+    assert all(
+        route.startswith("/astrbot_plugin_openai_image/") for route, _ in registered
+    )
 
 
 def _make_event(

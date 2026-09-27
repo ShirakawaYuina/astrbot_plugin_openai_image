@@ -1,0 +1,274 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>图片工作台</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <div>
+        <h1 data-i18n="title">图片工作台</h1>
+        <p class="muted" data-i18n="description">浏览历史图库，并直接发起文生图与图片编辑。</p>
+      </div>
+      <button id="refreshBtn" class="btn" type="button">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21 12a9 9 0 11-2.64-6.36" />
+          <path d="M21 3v6h-6" />
+        </svg>
+        <span data-i18n="refresh">刷新</span>
+      </button>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" type="button" role="tab" data-tab="gallery" data-i18n="tabGallery">历史图库</button>
+      <button class="tab" type="button" role="tab" data-tab="generate" data-i18n="tabGenerate">生图</button>
+      <button class="tab" type="button" role="tab" data-tab="edit" data-i18n="tabEdit">编辑</button>
+      <button class="tab" type="button" role="tab" data-tab="settings" data-i18n="tabSettings">设置</button>
+    </nav>
+
+    <section id="galleryTab" class="tab-panel">
+      <div class="filters">
+        <div class="search">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.5-3.5" />
+          </svg>
+          <input id="searchInput" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索文件名或提示词..." />
+        </div>
+        <select id="typeFilter" class="control" aria-label="图片类型">
+          <option value="" data-i18n="filterAll">全部类型</option>
+          <option value=".png">PNG</option>
+          <option value=".jpg">JPG</option>
+          <option value=".jpeg">JPEG</option>
+          <option value=".webp">WEBP</option>
+        </select>
+        <select id="sortFilter" class="control" aria-label="排序">
+          <option value="newest" data-i18n="sortNewest">最新优先</option>
+          <option value="oldest" data-i18n="sortOldest">最旧优先</option>
+          <option value="name" data-i18n="sortName">名称排序</option>
+        </select>
+        <span class="muted gallery-count"><span id="imageCount">0</span> <span data-i18n="imageUnit">张缓存图片</span></span>
+      </div>
+
+      <div class="gallery-layout">
+        <div id="gallery" class="gallery"></div>
+        <aside class="preview">
+          <div class="preview-head">
+            <h2 data-i18n="preview">预览</h2>
+            <div class="preview-actions">
+              <button id="viewOriginalBtn" class="btn" type="button" disabled data-i18n="viewOriginal">查看原图</button>
+              <button id="deleteImageBtn" class="btn danger" type="button" disabled data-i18n="delete">删除</button>
+            </div>
+          </div>
+          <div id="previewBox" class="preview-box" data-i18n="selectHint">请选择一张图片</div>
+          <h3 id="detailTitle" class="detail-title" data-i18n="noSelection">暂无选中图片</h3>
+          <div class="detail-row detail-row-block"><span data-i18n="detailPrompt">提示词</span><strong id="detailPrompt">-</strong></div>
+          <div class="detail-row"><span data-i18n="detailSize">图片尺寸</span><strong id="detailGenerationSize">-</strong></div>
+          <div class="detail-row"><span data-i18n="detailType">格式</span><strong id="detailType">-</strong></div>
+          <div class="detail-row"><span data-i18n="detailBytes">大小</span><strong id="detailSize">-</strong></div>
+          <div class="detail-row"><span data-i18n="detailTime">更新时间</span><strong id="detailTime">-</strong></div>
+        </aside>
+      </div>
+
+      <div id="galleryPagination" class="pagination hidden">
+        <span id="pageSummary"></span>
+        <div class="pagination-actions">
+          <button id="prevPageBtn" class="btn" type="button" data-i18n="prevPage">上一页</button>
+          <button id="nextPageBtn" class="btn" type="button" data-i18n="nextPage">下一页</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="generateTab" class="tab-panel hidden">
+      <form id="generateForm" class="workflow-layout">
+        <div class="action-panel">
+          <button id="generateSubmit" class="btn primary" type="submit">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v4" />
+              <path d="M12 17v4" />
+              <path d="M3 12h4" />
+              <path d="M17 12h4" />
+              <path d="M6 6l2.8 2.8" />
+              <path d="M15.2 15.2L18 18" />
+              <path d="M18 6l-2.8 2.8" />
+              <path d="M8.8 15.2L6 18" />
+            </svg>
+            <span data-i18n="generate">生成图片</span>
+          </button>
+          <div>
+            <div class="prompt-label-row">
+              <label for="generatePrompt" data-i18n="prompt">提示词</label>
+              <button id="generateOptimizePrompt" class="btn prompt-optimize-btn" type="button" data-prompt-target="generatePrompt" data-prompt-mode="generate">
+                <svg class="icon loading-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3v3" />
+                  <path d="M12 18v3" />
+                  <path d="M3 12h3" />
+                  <path d="M18 12h3" />
+                  <path d="M5.6 5.6l2.1 2.1" />
+                  <path d="M16.3 16.3l2.1 2.1" />
+                  <path d="M18.4 5.6l-2.1 2.1" />
+                  <path d="M7.7 16.3l-2.1 2.1" />
+                </svg>
+                <span data-i18n="optimize">优化</span>
+              </button>
+            </div>
+            <textarea id="generatePrompt" class="auto-resize-textarea" data-i18n-placeholder="generatePromptPlaceholder" placeholder="例如：浅色自然光下的现代别墅，干净构图，高细节。"></textarea>
+          </div>
+          <div class="field-row">
+            <div>
+              <label for="generateCount" data-i18n="count">数量</label>
+              <input id="generateCount" class="control" type="number" min="1" max="4" value="1" />
+            </div>
+            <div>
+              <label for="generateSizePreset" data-i18n="size">尺寸</label>
+              <select id="generateSizePreset" class="control">
+                <option value="auto" data-i18n="sizeAuto">自动</option>
+                <option value="1024x1024">方图 1024x1024</option>
+                <option value="1024x1536">竖图 1024x1536</option>
+                <option value="1536x1024">横图 1536x1024</option>
+                <option value="2048x2048">2K 方图</option>
+                <option value="2560x1440">2K 横图</option>
+                <option value="1440x2560">2K 竖图</option>
+                <option value="custom" data-i18n="sizeCustom">自定义</option>
+              </select>
+              <input id="generateCustomSize" class="control custom-size hidden" type="text" placeholder="1280x1280" />
+            </div>
+            <div>
+              <label for="generateQuality" data-i18n="quality">质量</label>
+              <select id="generateQuality" class="control">
+                <option value="auto">auto</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
+            </div>
+            <div>
+              <label for="generateModeration" data-i18n="moderation">审核</label>
+              <select id="generateModeration" class="control">
+                <option value="low">low</option>
+                <option value="auto">auto</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="result-panel">
+          <div class="result-label" data-i18n="resultPreview">结果预览</div>
+          <div id="generateResultBox" class="result-box result-state-empty" data-i18n="noResult">暂无结果</div>
+        </div>
+      </form>
+    </section>
+
+    <section id="editTab" class="tab-panel hidden">
+      <form id="editForm" class="workflow-layout">
+        <div class="action-panel">
+          <button id="editSubmit" class="btn primary" type="submit">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" />
+            </svg>
+            <span data-i18n="edit">编辑图片</span>
+          </button>
+          <div>
+            <div class="prompt-label-row">
+              <label for="editPrompt" data-i18n="prompt">提示词</label>
+              <button id="editOptimizePrompt" class="btn prompt-optimize-btn" type="button" data-prompt-target="editPrompt" data-prompt-mode="edit">
+                <svg class="icon loading-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3v3" />
+                  <path d="M12 18v3" />
+                  <path d="M3 12h3" />
+                  <path d="M18 12h3" />
+                  <path d="M5.6 5.6l2.1 2.1" />
+                  <path d="M16.3 16.3l2.1 2.1" />
+                  <path d="M18.4 5.6l-2.1 2.1" />
+                  <path d="M7.7 16.3l-2.1 2.1" />
+                </svg>
+                <span data-i18n="optimize">优化</span>
+              </button>
+            </div>
+            <textarea id="editPrompt" class="auto-resize-textarea" data-i18n-placeholder="editPromptPlaceholder" placeholder="例如：保留主体构图，改成柔和水彩风格，背景更明亮。"></textarea>
+          </div>
+          <div class="field-row">
+            <div>
+              <label for="editCount" data-i18n="count">数量</label>
+              <input id="editCount" class="control" type="number" min="1" max="4" value="1" />
+            </div>
+            <div>
+              <label for="editSizePreset" data-i18n="size">尺寸</label>
+              <select id="editSizePreset" class="control">
+                <option value="auto" data-i18n="sizeAuto">自动</option>
+                <option value="1024x1024">方图 1024x1024</option>
+                <option value="1024x1536">竖图 1024x1536</option>
+                <option value="1536x1024">横图 1536x1024</option>
+                <option value="2048x2048">2K 方图</option>
+                <option value="2560x1440">2K 横图</option>
+                <option value="1440x2560">2K 竖图</option>
+                <option value="custom" data-i18n="sizeCustom">自定义</option>
+              </select>
+              <input id="editCustomSize" class="control custom-size hidden" type="text" placeholder="1280x1280" />
+            </div>
+            <div>
+              <label for="editQuality" data-i18n="quality">质量</label>
+              <select id="editQuality" class="control">
+                <option value="auto">auto</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
+            </div>
+            <div>
+              <label for="editModeration" data-i18n="moderation">审核</label>
+              <select id="editModeration" class="control">
+                <option value="low">low</option>
+                <option value="auto">auto</option>
+              </select>
+            </div>
+          </div>
+          <div class="reference-head">
+            <span data-i18n="reference">参考图片</span>
+            <input id="editImage" class="reference-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+            <label class="reference-upload-btn" for="editImage" data-i18n="upload">上传图片</label>
+          </div>
+          <div id="referenceThumbs" class="reference-thumbs"></div>
+        </div>
+        <div class="result-panel">
+          <div class="result-label" data-i18n="resultPreview">结果预览</div>
+          <div id="editResultBox" class="result-box result-state-empty" data-i18n="noResult">暂无结果</div>
+        </div>
+      </form>
+    </section>
+
+    <section id="settingsTab" class="tab-panel hidden">
+      <div class="section-head">
+        <h2 data-i18n="tabSettings">设置</h2>
+        <p class="muted" data-i18n="settingsHint">管理提示词优化模型。图片供应商、尺寸和并发等参数请在插件设置页调整。</p>
+      </div>
+      <div class="settings-card">
+        <label data-i18n="optimizerModel">提示词优化模型</label>
+        <div class="settings-form-grid">
+          <div>
+            <label for="promptOptimizerModel" data-i18n="modelName">模型名称</label>
+            <input id="promptOptimizerModel" class="control" type="text" placeholder="gpt-5.4-mini" />
+          </div>
+          <div>
+            <label for="promptOptimizerBaseUrl" data-i18n="baseUrl">Base URL</label>
+            <input id="promptOptimizerBaseUrl" class="control" type="text" placeholder="https://api.openai.com/v1" />
+          </div>
+          <div>
+            <label for="promptOptimizerApiKey" data-i18n="apiKey">API Key</label>
+            <input id="promptOptimizerApiKey" class="control" type="password" autocomplete="off" />
+          </div>
+        </div>
+        <div class="settings-actions">
+          <button id="savePromptOptimizerSettingsBtn" class="btn primary" type="button" data-i18n="saveOptimizer">保存优化设置</button>
+          <span id="promptOptimizerKeyState" class="muted" data-i18n="keyMissing">API Key 未保存</span>
+        </div>
+        <p class="muted" data-i18n="optimizerHint">点击生图或编辑页面的“优化”按钮时，会调用这里配置的 OpenAI 兼容 Chat Completions 模型。API Key 留空表示保留已保存的密钥。</p>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

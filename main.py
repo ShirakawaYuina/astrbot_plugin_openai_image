@@ -35,7 +35,7 @@ from .core.utils.image_extract import (
     extract_first_image_component,
     extract_image_components,
 )
-from .core.web_admin import WebAdminServer, WebAdminSettings
+from .core.web_api import ImageStudioApi
 
 PLUGIN_NAME = "astrbot_plugin_openai_image"
 FIGURE_IMAGE_DIR_NAME = "figure"
@@ -46,7 +46,7 @@ FIGURE_IMAGE_FILE_NAME = "robot_figure.png"
     PLUGIN_NAME,
     "Codex",
     "基于 OpenAI 兼容图片接口的图片生成与图片编辑插件。",
-    "0.6.47",
+    "0.7.0",
 )
 class OpenAIImagePlugin(Star):
     """OpenAI 图片插件。"""
@@ -61,7 +61,7 @@ class OpenAIImagePlugin(Star):
         self._edit_service: ImageEditService | None = None
         self._task_service: ImageTaskService | None = None
         self._active_image_provider: ImageProviderConfig | None = None
-        self._web_admin_server: WebAdminServer | None = None
+        self._studio_api: ImageStudioApi | None = None
 
     async def initialize(self) -> None:
         """初始化插件运行时依赖。"""
@@ -78,14 +78,13 @@ class OpenAIImagePlugin(Star):
             self.config.get("max_cache_images", 50),
             self._mask_secret(active_provider.api_key),
         )
-        if self._web_admin_server is not None:
-            await self._web_admin_server.start()
+        # 内置页面固定挂在 pages/studio/，鉴权由 Dashboard 负责，这里只注册后端接口。
+        if self._studio_api is not None:
+            self._studio_api.register()
 
     async def terminate(self) -> None:
         """关闭插件内部创建的网络资源。"""
 
-        if self._web_admin_server is not None:
-            await self._web_admin_server.stop()
         if self._image_gateway is not None:
             await self._image_gateway.close()
 
@@ -1090,11 +1089,7 @@ class OpenAIImagePlugin(Star):
         self._task_service = ImageTaskService(
             max_concurrency=int(self.config.get("max_concurrency", 2) or 2),
         )
-        self._web_admin_server = WebAdminServer(
-            plugin=self,
-            settings=WebAdminSettings.from_config(self.config),
-            cache_dir=cache_root,
-        )
+        self._studio_api = ImageStudioApi(plugin=self, cache_dir=cache_root)
 
     def _ensure_ready(self) -> None:
         """确保运行时依赖已初始化。"""
