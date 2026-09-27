@@ -364,20 +364,19 @@ async function selectImage(name) {
   previewBox.replaceChildren(previewImage);
 }
 
-// 必须在点击事件里同步调用：一旦先 await，浏览器会认为用户手势已过期而拦截新窗口。
-function openOriginalImage(image) {
+// iframe 的 sandbox 不含 allow-popups，window.open 必定返回 null，
+// 所以原图只能在页内全屏浮层里展示，点击任意处或按 Esc 关闭。
+function showOriginalImage(image) {
   if (!image || !image.data_url) return;
-  const binary = atob(image.data_url.split(",", 2)[1]);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  const blobUrl = URL.createObjectURL(
-    new Blob([bytes], { type: image.mime_type }),
-  );
-  if (!window.open(blobUrl, "_blank")) {
-    showToast(t("popupBlocked", "浏览器拦截了新窗口，请允许弹窗后重试"));
-    return;
-  }
-  // 延迟回收，避免新标签页还没完成加载就失去 blob 来源。
-  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+  $("lightboxImage").src = image.data_url;
+  $("lightboxImage").alt = image.name;
+  $("lightbox").classList.remove("hidden");
+}
+
+function hideLightbox() {
+  $("lightbox").classList.add("hidden");
+  $("lightboxImage").removeAttribute("src");
+  $("lightboxImage").alt = "";
 }
 
 async function deleteImageByName(name) {
@@ -459,7 +458,7 @@ function renderResultImages(targetId, images) {
     )
     .join("");
   box.querySelectorAll("img").forEach((node, index) => {
-    node.addEventListener("dblclick", () => openOriginalImage(images[index]));
+    node.addEventListener("dblclick", () => showOriginalImage(images[index]));
   });
 }
 
@@ -629,11 +628,15 @@ document.querySelectorAll("[data-tab]").forEach((tab) => {
 });
 
 $("previewBox").addEventListener("dblclick", () =>
-  openOriginalImage(state.selected),
+  showOriginalImage(state.selected),
 );
 $("viewOriginalBtn").addEventListener("click", () =>
-  openOriginalImage(state.selected),
+  showOriginalImage(state.selected),
 );
+$("lightbox").addEventListener("click", hideLightbox);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") hideLightbox();
+});
 
 $("deleteImageBtn").addEventListener("click", () => {
   if (state.selected) {

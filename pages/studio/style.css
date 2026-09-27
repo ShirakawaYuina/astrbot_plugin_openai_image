@@ -739,6 +739,48 @@ textarea {
   z-index: 30;
 }
 
+/* 承载页面的 iframe sandbox 不含 allow-popups，window.open 永远打不开新标签页，
+   因此“查看原图”只能在页内用全屏浮层展示。 */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgb(8 12 20 / 90%);
+  cursor: zoom-out;
+}
+
+.lightbox-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 88%);
+  color: #17202f;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightbox-close:hover {
+  background: #fff;
+}
+
 @media (max-width: 1100px) {
   .gallery-layout {
     grid-template-columns: minmax(0, 1fr);

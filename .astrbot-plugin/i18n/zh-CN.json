@@ -57,7 +57,6 @@
       "taskFailedHint": "请查看错误信息后重试。",
       "taskDone": "图片处理完成",
       "doubleClickOriginal": "双击查看原图",
-      "popupBlocked": "浏览器拦截了新窗口，请允许弹窗后重试",
       "optimize": "优化",
       "optimizing": "优化中",
       "promptRequired": "请先输入提示词",

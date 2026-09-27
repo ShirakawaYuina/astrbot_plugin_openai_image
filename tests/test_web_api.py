@@ -796,6 +796,26 @@ def test_page_assets_exist_and_use_bridge_only():
     assert "multiple" in index_html
 
 
+def test_page_never_opens_a_new_window():
+    """页面不得依赖 window.open 或 target=_blank。
+
+    承载插件页面的 iframe sandbox 是 `allow-scripts allow-forms allow-downloads`，
+    不含 allow-popups，因此 window.open() 必定返回 null，打开新标签页永远不可用。
+    查看原图只能靠页内浮层实现。
+    """
+    page_root = ROOT / "pages" / "studio"
+    index_html = (page_root / "index.html").read_text(encoding="utf-8")
+    app_js = (page_root / "app.js").read_text(encoding="utf-8")
+
+    # 用带括号的形式匹配，避免命中解释该限制的注释文本。
+    assert "window.open(" not in app_js
+    assert "window.location" not in app_js
+    assert "_blank" not in index_html
+    assert 'id="lightbox"' in index_html
+    assert 'id="lightboxImage"' in index_html
+    assert '$("lightbox").classList.remove("hidden")' in app_js
+
+
 def test_page_i18n_file_covers_all_used_keys():
     i18n_data = json.loads(
         (ROOT / ".astrbot-plugin" / "i18n" / "zh-CN.json").read_text(encoding="utf-8")
