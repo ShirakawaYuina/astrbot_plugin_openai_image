@@ -615,7 +615,7 @@ function renderCreateResults(images, promptText) {
       <span class="result-tag">${t("latestResult", "本次生成结果")} (${images.length}张)</span>
       <button id="hideResultBtn" class="btn text-btn" type="button">${t("collapse", "收起")}</button>
     </div>
-    <div class="result-grid">
+    <div class="result-grid ${images.length === 1 ? "result-single" : "result-multi"}">
       ${images
         .map(
           (image, index) => `
