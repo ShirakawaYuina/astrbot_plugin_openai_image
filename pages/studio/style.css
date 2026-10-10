@@ -1031,6 +1031,66 @@ textarea {
   max-height: 380px;
 }
 
+/* 渐进式即刻就位槽位样式 */
+.result-card.slot-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: transparent;
+  border: 1px dashed rgba(61, 115, 246, 0.28);
+  box-shadow: none;
+  border-radius: 18px;
+  min-height: 220px;
+  width: 100%;
+  animation: fadeIn 220ms ease;
+}
+
+[data-theme="dark"] .result-card.slot-loading {
+  border-color: rgba(99, 140, 255, 0.28);
+}
+
+.result-grid.result-single .result-card.slot-loading {
+  max-width: 480px;
+  min-height: 280px;
+}
+
+.slot-loading-tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  opacity: 0.85;
+  letter-spacing: 0.02em;
+}
+
+.result-card.slot-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--danger-soft);
+  border: 1px dashed rgba(194, 65, 65, 0.35);
+  box-shadow: none;
+  border-radius: 18px;
+  min-height: 220px;
+  width: 100%;
+}
+
+.slot-error-icon {
+  width: 28px;
+  height: 28px;
+  stroke: var(--danger);
+  fill: none;
+}
+
+.slot-error-tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
 
 /* ==================== 方案 2：极简极光流光环 + 动态状态流 ==================== */
 .aurora-loading-container {

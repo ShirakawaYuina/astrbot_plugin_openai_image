@@ -688,49 +688,121 @@ async function submitCreateTask() {
       }
     }
 
-    renderResultStatus(
-      `${t("generating", "正在生成图片...")} (${hasReferences ? "图片编辑" : "文生图"} · ${count}张)`,
-    );
-
-    const resultNames = [];
-    if (hasReferences) {
-      const dataUrls = await Promise.all(
-        state.referenceImageFiles.map(fileToDataUrl),
-      );
-      for (let i = 0; i < count; i += 1) {
-        const data = await bridge.apiPost("edit", {
-          prompt: finalPrompt,
-          size: sizeValue,
-          quality,
-          moderation,
-          data_urls: dataUrls,
-        });
-        if (data.image && data.image.name) {
-          resultNames.push(data.image.name);
-        }
-      }
-    } else {
-      for (let i = 0; i < count; i += 1) {
-        const data = await bridge.apiPost("generate", {
-          prompt: finalPrompt,
-          size: sizeValue,
-          quality,
-          moderation,
-        });
-        if (data.image && data.image.name) {
-          resultNames.push(data.image.name);
-        }
-      }
+    let slotAspect = "1 / 1";
+    if (sizeValue) {
+      const [w, h] = sizeValue.split("x").map(Number);
+      if (w && h) slotAspect = `${w} / ${h}`;
     }
 
-    showToast(t("taskDone", "图片处理完成"));
-    await loadGallery();
+    const resultArea = $("createResultArea");
+    resultArea.classList.remove("hidden");
+    resultArea.innerHTML = `
+      <div class="result-header">
+        <span id="resultHeaderTag" class="result-tag">${t("latestResult", "本次生成结果")} (0/${count})</span>
+        <button id="hideResultBtn" class="btn text-btn" type="button">${t("collapse", "收起")}</button>
+      </div>
+      <div class="result-grid ${count === 1 ? "result-single" : "result-multi"}">
+        ${Array.from({ length: count }, (_, i) => `
+          <div class="result-card slot-loading" data-slot="${i}" style="aspect-ratio: ${slotAspect}">
+            <div class="aurora-ring-wrapper">
+              <div class="aurora-glow"></div>
+              <div class="aurora-ring">
+                <div class="aurora-ring-core"></div>
+              </div>
+              <svg class="icon aurora-center-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
+              </svg>
+            </div>
+            <span class="slot-loading-tag">${count > 1 ? `#${i + 1} · ` : ""}${t("generating", "正在生成图片，请稍候...")}</span>
+          </div>
+        `).join("")}
+      </div>`;
 
-    const fullImages = await Promise.all(
-      resultNames.map((name) => fetchFullImage(name)),
-    );
-    state.lastGeneratedImages = fullImages;
-    renderCreateResults(fullImages, finalPrompt);
+    $("hideResultBtn").addEventListener("click", () => {
+      resultArea.classList.add("hidden");
+    });
+
+    let dataUrls = [];
+    if (hasReferences) {
+      dataUrls = await Promise.all(
+        state.referenceImageFiles.map(fileToDataUrl),
+      );
+    }
+
+    const slots = new Array(count).fill(null);
+    let completedCount = 0;
+
+    const updateHeaderTag = () => {
+      const tag = $("resultHeaderTag");
+      if (tag) {
+        tag.textContent = `${t("latestResult", "本次生成结果")} (${completedCount}/${count})`;
+      }
+    };
+
+    const taskPromises = Array.from({ length: count }, async (_, index) => {
+      try {
+        const data = await bridge.apiPost(hasReferences ? "edit" : "generate", {
+          prompt: finalPrompt,
+          size: sizeValue,
+          quality,
+          moderation,
+          ...(hasReferences ? { data_urls: dataUrls } : {}),
+        });
+
+        if (!data || !data.image || !data.image.name) {
+          throw new Error("服务端未返回图片信息");
+        }
+
+        const img = await fetchFullImage(data.image.name);
+        slots[index] = img;
+        completedCount += 1;
+        updateHeaderTag();
+
+        const slotCard = resultArea.querySelector(`.result-card[data-slot="${index}"]`);
+        if (slotCard) {
+          slotCard.classList.remove("slot-loading");
+          slotCard.style.aspectRatio = "";
+          slotCard.innerHTML = `<img src="${img.data_url}" alt="${img.name}" data-index="${index}" title="${t("viewOriginal", "查看原图")}" />`;
+          const imgNode = slotCard.querySelector("img");
+          if (imgNode) {
+            imgNode.addEventListener("click", () => showOriginalImage(img));
+          }
+        }
+      } catch (err) {
+        const slotCard = resultArea.querySelector(`.result-card[data-slot="${index}"]`);
+        if (slotCard) {
+          slotCard.classList.remove("slot-loading");
+          slotCard.classList.add("slot-error");
+          slotCard.innerHTML = `
+            <svg class="icon slot-error-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span class="slot-error-tag">#${index + 1} 失败</span>
+          `;
+          slotCard.title = err.message || "生成失败";
+        }
+        slots[index] = { error: err.message };
+      }
+    });
+
+    await Promise.allSettled(taskPromises);
+
+    const validImages = slots.filter((item) => item && item.data_url);
+    state.lastGeneratedImages = validImages;
+
+    if (validImages.length > 0) {
+      const tag = $("resultHeaderTag");
+      if (tag) {
+        tag.textContent = `${t("latestResult", "本次生成结果")} (${validImages.length}张)`;
+      }
+      showToast(t("taskDone", "图片处理完成"));
+      loadGallery().catch(() => {});
+    } else {
+      const firstError = slots.find((item) => item && item.error)?.error;
+      renderResultError(firstError || t("taskFailedHint", "请查看错误信息后重试。"));
+    }
   } catch (error) {
     renderResultError(error.message);
     showToast(error.message);
