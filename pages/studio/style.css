@@ -1031,50 +1031,6 @@ textarea {
   max-height: 380px;
 }
 
-.result-card-actions {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 12px 14px;
-  background: linear-gradient(to top, rgba(15, 23, 42, 0.85), transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  opacity: 0;
-  border-bottom-left-radius: 18px;
-  border-bottom-right-radius: 18px;
-  transition: opacity 160ms ease;
-  pointer-events: none;
-}
-
-.result-card:hover .result-card-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.result-action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 9px;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 6px;
-  border: none;
-  background: rgba(255, 255, 255, 0.92);
-  color: #17202f;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-  transition: all 120ms ease;
-}
-
-.result-action-btn:hover {
-  background: #ffffff;
-  color: var(--primary);
-  transform: scale(1.04);
-}
 
 /* ==================== 方案 2：极简极光流光环 + 动态状态流 ==================== */
 .aurora-loading-container {
