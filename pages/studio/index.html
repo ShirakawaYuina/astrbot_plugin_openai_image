@@ -251,9 +251,14 @@
 
     <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
       <div id="lightboxStage" class="lightbox-stage">
-        <img id="lightboxImage" class="lightbox-image" alt="" />
+        <img id="lightboxImage" class="lightbox-image" alt="" draggable="false" />
       </div>
-      <div id="lightboxZoomLabel" class="lightbox-zoom-label"></div>
+      <div id="lightboxToolbar" class="lightbox-toolbar">
+        <button id="lightboxZoomOutBtn" class="lightbox-tool-btn" type="button" title="缩小">−</button>
+        <span id="lightboxZoomLabel" class="lightbox-zoom-label">100%</span>
+        <button id="lightboxZoomInBtn" class="lightbox-tool-btn" type="button" title="放大">+</button>
+        <button id="lightboxZoomResetBtn" class="lightbox-tool-btn" type="button" title="重置">⟲</button>
+      </div>
       <button id="lightboxClose" class="lightbox-close" type="button" aria-label="关闭原图">✕</button>
     </div>
 

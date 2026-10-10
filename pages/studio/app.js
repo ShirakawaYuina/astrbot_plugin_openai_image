@@ -401,6 +401,11 @@ function applyLightboxZoom() {
     lightbox.naturalHeight * scale,
   )}px`;
   $("lightboxZoomLabel").textContent = `${Math.round(scale * 100)}%`;
+  if (lightbox.zoom > LIGHTBOX_MIN_ZOOM) {
+    $("lightboxImage").classList.add("can-drag");
+  } else {
+    $("lightboxImage").classList.remove("can-drag");
+  }
 }
 
 function layoutLightbox() {
@@ -422,6 +427,7 @@ function showOriginalImage(image) {
   lightbox.naturalHeight = 0;
   lightboxImage.style.width = "";
   lightboxImage.style.height = "";
+  lightboxImage.draggable = false;
   lightboxImage.src = image.data_url;
   lightboxImage.alt = image.name;
 
@@ -454,6 +460,7 @@ function hideLightbox() {
   lightbox.drag = null;
   lightbox.suppressClick = false;
   $("lightboxImage").classList.remove("is-dragging");
+  $("lightboxImage").classList.remove("can-drag");
   $("lightboxStage").scrollTo(0, 0);
 }
 
@@ -948,16 +955,86 @@ $("previewBox").addEventListener("dblclick", () =>
 $("viewOriginalBtn").addEventListener("click", () =>
   showOriginalImage(state.selected),
 );
+function zoomLightboxBy(factor, centerX, centerY) {
+  const stage = $("lightboxStage");
+  const rect = stage.getBoundingClientRect();
+  const cursorX = centerX !== undefined ? centerX : rect.width / 2;
+  const cursorY = centerY !== undefined ? centerY : rect.height / 2;
+  const anchorX = (stage.scrollLeft + cursorX) / Math.max(1, stage.scrollWidth);
+  const anchorY = (stage.scrollTop + cursorY) / Math.max(1, stage.scrollHeight);
+
+  lightbox.zoom = Math.min(
+    LIGHTBOX_MAX_ZOOM,
+    Math.max(LIGHTBOX_MIN_ZOOM, lightbox.zoom * factor),
+  );
+  applyLightboxZoom();
+
+  stage.scrollLeft = anchorX * stage.scrollWidth - cursorX;
+  stage.scrollTop = anchorY * stage.scrollHeight - cursorY;
+}
+
 // 拖拽结束后浏览器仍会派发 click，必须吞掉这一次，否则拖完图就被误关。
-$("lightbox").addEventListener("click", () => {
+$("lightbox").addEventListener("click", (event) => {
   if (lightbox.suppressClick) {
     lightbox.suppressClick = false;
+    return;
+  }
+  if (
+    event.target.closest("#lightboxToolbar") ||
+    event.target.closest(".lightbox-toolbar")
+  ) {
+    return;
+  }
+  // 放大状态下点击图片本身不应误关闭浮层
+  if (lightbox.zoom > LIGHTBOX_MIN_ZOOM && event.target === $("lightboxImage")) {
     return;
   }
   hideLightbox();
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") hideLightbox();
+});
+
+// 禁止图片原生 HTML5 拖拽，防止冲突打断平移手势
+$("lightboxImage").addEventListener("dragstart", (event) => {
+  event.preventDefault();
+});
+
+// 双击图片：未放大时快速放大至 2.5x，已放大时重置回 1x
+$("lightboxImage").addEventListener("dblclick", (event) => {
+  event.stopPropagation();
+  const stage = $("lightboxStage");
+  if (lightbox.zoom <= LIGHTBOX_MIN_ZOOM) {
+    const rect = stage.getBoundingClientRect();
+    const cursorX = event.clientX - rect.left;
+    const cursorY = event.clientY - rect.top;
+    const anchorX = (stage.scrollLeft + cursorX) / Math.max(1, stage.scrollWidth);
+    const anchorY = (stage.scrollTop + cursorY) / Math.max(1, stage.scrollHeight);
+    lightbox.zoom = 2.5;
+    applyLightboxZoom();
+    stage.scrollLeft = anchorX * stage.scrollWidth - cursorX;
+    stage.scrollTop = anchorY * stage.scrollHeight - cursorY;
+  } else {
+    lightbox.zoom = LIGHTBOX_MIN_ZOOM;
+    applyLightboxZoom();
+    stage.scrollTo(0, 0);
+  }
+});
+
+// 缩放工具栏操作
+$("lightboxZoomInBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  zoomLightboxBy(LIGHTBOX_WHEEL_FACTOR);
+});
+$("lightboxZoomOutBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  zoomLightboxBy(1 / LIGHTBOX_WHEEL_FACTOR);
+});
+$("lightboxZoomResetBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  lightbox.zoom = LIGHTBOX_MIN_ZOOM;
+  applyLightboxZoom();
+  $("lightboxStage").scrollTo(0, 0);
 });
 
 // 滚轮缩放必须注册为非 passive，否则 event.preventDefault() 会被浏览器忽略，
@@ -993,7 +1070,9 @@ $("lightboxStage").addEventListener(
 
 // 未放大时不启动拖拽，否则会挡住点击遮罩关闭。
 $("lightboxStage").addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return; // 仅限鼠标左键拖拽
   if (lightbox.zoom <= LIGHTBOX_MIN_ZOOM) return;
+  event.preventDefault(); // 阻止浏览器原生拖拽和文字选中
   const stage = $("lightboxStage");
   lightbox.drag = {
     pointerId: event.pointerId,
@@ -1002,12 +1081,15 @@ $("lightboxStage").addEventListener("pointerdown", (event) => {
     scrollLeft: stage.scrollLeft,
     scrollTop: stage.scrollTop,
   };
-  stage.setPointerCapture(event.pointerId);
+  try {
+    stage.setPointerCapture(event.pointerId);
+  } catch {}
   $("lightboxImage").classList.add("is-dragging");
 });
 
 $("lightboxStage").addEventListener("pointermove", (event) => {
   if (!lightbox.drag || lightbox.drag.pointerId !== event.pointerId) return;
+  event.preventDefault();
   const deltaX = event.clientX - lightbox.drag.startX;
   const deltaY = event.clientY - lightbox.drag.startY;
   if (
@@ -1021,12 +1103,22 @@ $("lightboxStage").addEventListener("pointermove", (event) => {
   stage.scrollTop = lightbox.drag.scrollTop - deltaY;
 });
 
+const endLightboxDrag = (event) => {
+  if (!lightbox.drag || lightbox.drag.pointerId !== event.pointerId) return;
+  try {
+    $("lightboxStage").releasePointerCapture(event.pointerId);
+  } catch {}
+  lightbox.drag = null;
+  $("lightboxImage").classList.remove("is-dragging");
+};
+
 ["pointerup", "pointercancel"].forEach((eventName) => {
-  $("lightboxStage").addEventListener(eventName, (event) => {
-    if (!lightbox.drag || lightbox.drag.pointerId !== event.pointerId) return;
-    lightbox.drag = null;
-    $("lightboxImage").classList.remove("is-dragging");
-  });
+  $("lightboxStage").addEventListener(eventName, endLightboxDrag);
+});
+window.addEventListener("pointerup", (event) => {
+  if (lightbox.drag && lightbox.drag.pointerId === event.pointerId) {
+    endLightboxDrag(event);
+  }
 });
 
 $("deleteImageBtn").addEventListener("click", () => {
