@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import importlib
 import json
@@ -790,9 +790,9 @@ def test_page_assets_exist_and_use_bridge_only():
 
     # 主题跟随 Dashboard，通过 data-theme 覆盖亮暗配色。
     assert '[data-theme="dark"]' in style_css
-    for tab in ("gallery", "generate", "edit", "settings"):
+    for tab in ("create", "gallery", "settings"):
         assert f'data-tab="{tab}"' in index_html
-    assert 'id="referenceThumbs"' in index_html
+    assert 'id="referenceChips"' in index_html
     assert "multiple" in index_html
 
 

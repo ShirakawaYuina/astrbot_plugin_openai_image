@@ -22,11 +22,15 @@ const LIGHTBOX_DRAG_THRESHOLD = 4;
 const state = {
   images: [],
   selected: null,
-  activeTab: "gallery",
+  activeTab: "create",
   galleryPage: 1,
   totalPages: 1,
   total: 0,
   referenceImageFiles: [],
+  createSize: "auto",
+  createCount: 1,
+  isGenerating: false,
+  lastGeneratedImages: [],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -115,28 +119,19 @@ function showTab(tabId) {
   });
   if (tabId === "gallery") {
     renderGallery();
-  } else {
-    resizePromptTextareas();
+  } else if (tabId === "create") {
+    resizePromptTextarea($("createPrompt"));
   }
 }
 
 function resizePromptTextarea(textarea) {
   if (!textarea) return;
   textarea.style.height = "auto";
-  textarea.style.height = `${textarea.scrollHeight}px`;
+  textarea.style.height = `${Math.min(240, Math.max(52, textarea.scrollHeight))}px`;
 }
 
 function resizePromptTextareas() {
-  ["generatePrompt", "editPrompt"].forEach((id) => resizePromptTextarea($(id)));
-}
-
-function syncCustomSize(presetId, customId) {
-  $(customId).classList.toggle("hidden", $(presetId).value !== "custom");
-}
-
-function resolveSizeValue(presetId, customId) {
-  const preset = $(presetId).value;
-  return preset === "custom" ? $(customId).value.trim() : preset;
+  resizePromptTextarea($("createPrompt"));
 }
 
 function renderPromptOptimizerSettings(settings) {
@@ -496,81 +491,27 @@ async function loadGallery() {
   renderGallery();
 }
 
-function setResultState(targetId, stateName, message = "") {
-  const box = $(targetId);
-  box.classList.remove(
-    "result-state-empty",
-    "result-state-loading",
-    "result-state-success",
-    "result-state-error",
-  );
-  box.classList.add(`result-state-${stateName}`);
-  if (stateName === "empty") {
-    box.textContent = message || t("noResult", "暂无结果");
-    return;
-  }
-  if (stateName === "loading") {
-    box.innerHTML = `
-      <div class="result-status">
-        <span class="result-spinner" aria-hidden="true"></span>
-        <strong>${message || t("generating", "正在生成图片，请稍候...")}</strong>
-      </div>`;
-    return;
-  }
-  if (stateName === "error") {
-    box.innerHTML = `
-      <div class="result-status" role="alert">
-        <strong>${t("taskFailed", "图片处理失败")}</strong>
-        <span>${message || t("taskFailedHint", "请查看错误信息后重试。")}</span>
-      </div>`;
-  }
-}
-
-function renderResultImages(targetId, images) {
-  // 生成/编辑完成后把本次结果留在大预览区，减少用户在图库和表单之间来回找图。
-  if (!images.length) {
-    setResultState(targetId, "empty");
-    return;
-  }
-  const box = $(targetId);
-  setResultState(targetId, "success");
-  box.innerHTML = images
-    .map(
-      (image) =>
-        `<img src="${image.data_url}" alt="${image.name}" title="${t("doubleClickOriginal", "双击查看原图")}">`,
-    )
-    .join("");
-  box.querySelectorAll("img").forEach((node, index) => {
-    node.addEventListener("dblclick", () => showOriginalImage(images[index]));
-  });
-}
-
-function renderReferenceThumbnails() {
-  // 多参考图只在编辑页显示缩略图，提交时按文件对象逐张转成 data URL。
-  $("referenceThumbs").innerHTML = state.referenceImageFiles
+function renderReferenceChips() {
+  const container = $("referenceChips");
+  if (!container) return;
+  container.innerHTML = state.referenceImageFiles
     .map((file, index) => {
       if (!REFERENCE_IMAGE_PREVIEW_URLS.has(file)) {
         REFERENCE_IMAGE_PREVIEW_URLS.set(file, URL.createObjectURL(file));
       }
       return `
-        <div class="reference-thumb">
+        <div class="reference-chip">
           <img src="${REFERENCE_IMAGE_PREVIEW_URLS.get(file)}" alt="参考图片 ${index + 1}" />
-          <button class="reference-thumb-remove" type="button" data-index="${index}" title="移除参考图片 ${index + 1}">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M18 6L6 18" />
-              <path d="M6 6l12 12" />
-            </svg>
-          </button>
+          <button class="reference-chip-remove" type="button" data-index="${index}" title="移除参考图片">✕</button>
         </div>`;
     })
     .join("");
-  $("referenceThumbs")
-    .querySelectorAll(".reference-thumb-remove")
-    .forEach((button) => {
-      button.addEventListener("click", () =>
-        removeReferenceImageFile(Number(button.dataset.index)),
-      );
+
+  container.querySelectorAll(".reference-chip-remove").forEach((button) => {
+    button.addEventListener("click", () => {
+      removeReferenceImageFile(Number(button.dataset.index));
     });
+  });
 }
 
 function removeReferenceImageFile(index) {
@@ -580,7 +521,7 @@ function removeReferenceImageFile(index) {
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   REFERENCE_IMAGE_PREVIEW_URLS.delete(file);
   state.referenceImageFiles.splice(index, 1);
-  renderReferenceThumbnails();
+  renderReferenceChips();
 }
 
 function addReferenceImageFile(file) {
@@ -589,7 +530,7 @@ function addReferenceImageFile(file) {
     return;
   }
   state.referenceImageFiles.push(file);
-  renderReferenceThumbnails();
+  renderReferenceChips();
 }
 
 function handlePasteImage(event) {
@@ -626,22 +567,222 @@ function fileToDataUrl(file) {
   });
 }
 
-async function runTask(endpoint, body, count, targetId) {
-  // 逐张串行提交，避免一次性并发多张触发上游限流。
-  const resultNames = [];
-  for (let index = 0; index < count; index += 1) {
-    const data = await bridge.apiPost(endpoint, body);
-    if (data.image && data.image.name) {
-      resultNames.push(data.image.name);
-    }
+function renderResultStatus(message) {
+  const resultArea = $("createResultArea");
+  resultArea.classList.remove("hidden");
+  resultArea.innerHTML = `
+    <div class="result-status-card">
+      <div class="result-spinner" aria-hidden="true"></div>
+      <div class="result-status-text">${message}</div>
+    </div>`;
+}
+
+function renderResultError(message) {
+  const resultArea = $("createResultArea");
+  resultArea.classList.remove("hidden");
+  resultArea.innerHTML = `
+    <div class="result-error-card">
+      <div class="result-error-info">
+        <div class="result-error-title">${t("taskFailed", "图片处理失败")}</div>
+        <div class="result-error-desc">${message || t("taskFailedHint", "请查看错误信息后重试。")}</div>
+      </div>
+      <button id="retryCreateBtn" class="btn primary" type="button">${t("retry", "重试")}</button>
+    </div>`;
+  $("retryCreateBtn").addEventListener("click", () => submitCreateTask());
+}
+
+function renderCreateResults(images, promptText) {
+  const resultArea = $("createResultArea");
+  if (!images.length) {
+    resultArea.classList.add("hidden");
+    return;
+  }
+  resultArea.classList.remove("hidden");
+  resultArea.innerHTML = `
+    <div class="result-header">
+      <span class="result-tag">${t("latestResult", "本次生成结果")} (${images.length}张)</span>
+      <button id="hideResultBtn" class="btn text-btn" type="button">${t("collapse", "收起")}</button>
+    </div>
+    <div class="result-grid">
+      ${images
+        .map(
+          (image, index) => `
+        <div class="result-card">
+          <img src="${image.data_url}" alt="${image.name}" data-index="${index}" title="${t("doubleClickOriginal", "双击查看原图")}" />
+          <div class="result-card-actions">
+            <button class="result-action-btn action-zoom" type="button" data-index="${index}" title="${t("viewOriginal", "查看原图")}">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              <span>${t("preview", "原图")}</span>
+            </button>
+            <button class="result-action-btn action-download" type="button" data-index="${index}" title="${t("download", "下载")}">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>${t("download", "下载")}</span>
+            </button>
+            <button class="result-action-btn action-use-ref" type="button" data-index="${index}" title="${t("useAsReference", "作为参考图")}">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <span>${t("useAsReference", "作为参考图")}</span>
+            </button>
+            <button class="result-action-btn action-copy-prompt" type="button" title="${t("copyPrompt", "复制提示词")}">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>${t("copyPrompt", "复制")}</span>
+            </button>
+          </div>
+        </div>`,
+        )
+        .join("")}
+    </div>`;
+
+  $("hideResultBtn").addEventListener("click", () => {
+    resultArea.classList.add("hidden");
+  });
+
+  resultArea.querySelectorAll(".result-card img").forEach((imgNode) => {
+    imgNode.addEventListener("dblclick", () => {
+      const index = Number(imgNode.dataset.index);
+      showOriginalImage(images[index]);
+    });
+  });
+
+  resultArea.querySelectorAll(".action-zoom").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.index);
+      showOriginalImage(images[index]);
+    });
+  });
+
+  resultArea.querySelectorAll(".action-download").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.index);
+      const img = images[index];
+      const link = document.createElement("a");
+      link.href = img.data_url;
+      link.download = img.name;
+      link.click();
+    });
+  });
+
+  resultArea.querySelectorAll(".action-use-ref").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const index = Number(button.dataset.index);
+      const img = images[index];
+      try {
+        const response = await fetch(img.data_url);
+        const blob = await response.blob();
+        const file = new File([blob], img.name, {
+          type: blob.type || "image/png",
+        });
+        addReferenceImageFile(file);
+        showToast(t("addedReferences", "已添加参考图片").replace("{count}", "1"));
+      } catch (error) {
+        showToast(`转换参考图失败: ${error.message}`);
+      }
+    });
+  });
+
+  resultArea.querySelectorAll(".action-copy-prompt").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (promptText) {
+        navigator.clipboard.writeText(promptText).then(() => {
+          showToast(t("promptCopied", "提示词已复制"));
+        });
+      }
+    });
+  });
+}
+
+async function submitCreateTask() {
+  const promptInput = $("createPrompt");
+  const prompt = promptInput.value.trim();
+  if (!prompt) {
+    showToast(t("promptRequired", "请先输入提示词"));
+    promptInput.focus();
+    return;
+  }
+  if (state.isGenerating) return;
+
+  state.isGenerating = true;
+  $("createSubmitBtn").disabled = true;
+
+  let sizeValue = state.createSize;
+  if (sizeValue === "custom") {
+    sizeValue = $("createCustomSize").value.trim() || "auto";
   }
 
-  showToast(t("taskDone", "图片处理完成"));
-  await loadGallery();
-  renderResultImages(
-    targetId,
-    await Promise.all(resultNames.map((name) => fetchFullImage(name))),
-  );
+  const quality = $("createQuality").value;
+  const moderation = $("createModeration").value;
+  const count = state.createCount;
+  const hasReferences = state.referenceImageFiles.length > 0;
+
+  try {
+    let finalPrompt = prompt;
+
+    if ($("autoOptimizeToggle").checked) {
+      renderResultStatus(t("optimizing", "正在优化提示词..."));
+      try {
+        const optimizeRes = await bridge.apiPost("optimize-prompt", {
+          prompt,
+          mode: hasReferences ? "edit" : "generate",
+        });
+        if (optimizeRes && optimizeRes.prompt) {
+          finalPrompt = optimizeRes.prompt;
+          promptInput.value = finalPrompt;
+          resizePromptTextarea(promptInput);
+        }
+      } catch (optErr) {
+        showToast(`提示词优化异常: ${optErr.message}，将使用原提示词`);
+      }
+    }
+
+    renderResultStatus(
+      `${t("generating", "正在生成图片...")} (${hasReferences ? "图片编辑" : "文生图"} · ${count}张)`,
+    );
+
+    const resultNames = [];
+    if (hasReferences) {
+      const dataUrls = await Promise.all(
+        state.referenceImageFiles.map(fileToDataUrl),
+      );
+      for (let i = 0; i < count; i += 1) {
+        const data = await bridge.apiPost("edit", {
+          prompt: finalPrompt,
+          size: sizeValue,
+          quality,
+          moderation,
+          data_urls: dataUrls,
+        });
+        if (data.image && data.image.name) {
+          resultNames.push(data.image.name);
+        }
+      }
+    } else {
+      for (let i = 0; i < count; i += 1) {
+        const data = await bridge.apiPost("generate", {
+          prompt: finalPrompt,
+          size: sizeValue,
+          quality,
+          moderation,
+        });
+        if (data.image && data.image.name) {
+          resultNames.push(data.image.name);
+        }
+      }
+    }
+
+    showToast(t("taskDone", "图片处理完成"));
+    await loadGallery();
+
+    const fullImages = await Promise.all(
+      resultNames.map((name) => fetchFullImage(name)),
+    );
+    state.lastGeneratedImages = fullImages;
+    renderCreateResults(fullImages, finalPrompt);
+  } catch (error) {
+    renderResultError(error.message);
+    showToast(error.message);
+  } finally {
+    state.isGenerating = false;
+    $("createSubmitBtn").disabled = !promptInput.value.trim();
+  }
 }
 
 $("refreshBtn").addEventListener("click", () => {
@@ -679,31 +820,110 @@ $("savePromptOptimizerSettingsBtn").addEventListener("click", () => {
   savePromptOptimizerSettings();
 });
 
-$("generateOptimizePrompt").addEventListener("click", () =>
-  optimizePrompt($("generateOptimizePrompt")),
-);
-$("editOptimizePrompt").addEventListener("click", () =>
-  optimizePrompt($("editOptimizePrompt")),
-);
+function closeAllDropdowns() {
+  $("sizeMenu").classList.add("hidden");
+  $("countMenu").classList.add("hidden");
+  $("advancedMenu").classList.add("hidden");
+  $("sizeDropdownBtn").setAttribute("aria-expanded", "false");
+  $("countDropdownBtn").setAttribute("aria-expanded", "false");
+}
 
-$("generateSizePreset").addEventListener("change", () =>
-  syncCustomSize("generateSizePreset", "generateCustomSize"),
-);
-$("editSizePreset").addEventListener("change", () =>
-  syncCustomSize("editSizePreset", "editCustomSize"),
-);
-
-["generatePrompt", "editPrompt"].forEach((id) => {
-  $(id).addEventListener("input", () => resizePromptTextarea($(id)));
+$("referenceUploadBtn").addEventListener("click", () => {
+  $("referenceFileInput").click();
 });
 
-$("editImage").addEventListener("change", () => {
-  Array.from($("editImage").files || []).forEach(addReferenceImageFile);
-  $("editImage").value = "";
+$("referenceFileInput").addEventListener("change", () => {
+  Array.from($("referenceFileInput").files || []).forEach(addReferenceImageFile);
+  $("referenceFileInput").value = "";
+});
+
+$("createPrompt").addEventListener("input", () => {
+  resizePromptTextarea($("createPrompt"));
+  $("createSubmitBtn").disabled =
+    !$("createPrompt").value.trim() || state.isGenerating;
+});
+
+$("createPrompt").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    submitCreateTask();
+  }
+});
+
+$("createSubmitBtn").addEventListener("click", () => {
+  submitCreateTask();
+});
+
+$("sizeDropdownBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  const willOpen = $("sizeMenu").classList.contains("hidden");
+  closeAllDropdowns();
+  if (willOpen) {
+    $("sizeMenu").classList.remove("hidden");
+    $("sizeDropdownBtn").setAttribute("aria-expanded", "true");
+  }
+});
+
+$("sizeMenu").querySelectorAll(".dropdown-item").forEach((item) => {
+  item.addEventListener("click", () => {
+    state.createSize = item.dataset.size;
+    $("sizeLabel").textContent = item.textContent.split(" ")[0];
+    $("sizeMenu").querySelectorAll(".dropdown-item").forEach((el) => {
+      el.classList.toggle("active", el === item);
+    });
+    closeAllDropdowns();
+  });
+});
+
+$("createCustomSize").addEventListener("input", () => {
+  const value = $("createCustomSize").value.trim();
+  if (value) {
+    state.createSize = "custom";
+    $("sizeLabel").textContent = value;
+    $("sizeMenu").querySelectorAll(".dropdown-item").forEach((el) => {
+      el.classList.remove("active");
+    });
+  }
+});
+
+$("countDropdownBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  const willOpen = $("countMenu").classList.contains("hidden");
+  closeAllDropdowns();
+  if (willOpen) {
+    $("countMenu").classList.remove("hidden");
+    $("countDropdownBtn").setAttribute("aria-expanded", "true");
+  }
+});
+
+$("countMenu").querySelectorAll(".dropdown-item").forEach((item) => {
+  item.addEventListener("click", () => {
+    state.createCount = Number(item.dataset.count);
+    $("countLabel").textContent = `${state.createCount}张`;
+    $("countMenu").querySelectorAll(".dropdown-item").forEach((el) => {
+      el.classList.toggle("active", el === item);
+    });
+    closeAllDropdowns();
+  });
+});
+
+$("advancedBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  const willOpen = $("advancedMenu").classList.contains("hidden");
+  closeAllDropdowns();
+  if (willOpen) {
+    $("advancedMenu").classList.remove("hidden");
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".dropdown-wrapper")) {
+    closeAllDropdowns();
+  }
 });
 
 document.addEventListener("paste", (event) => {
-  if (state.activeTab === "edit") handlePasteImage(event);
+  if (state.activeTab === "create") handlePasteImage(event);
 });
 
 document.querySelectorAll("[data-tab]").forEach((tab) => {
@@ -812,63 +1032,6 @@ window.addEventListener("resize", () => {
   if (!$("lightbox").classList.contains("hidden")) layoutLightbox();
 });
 
-$("generateForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const submit = $("generateSubmit");
-  submit.disabled = true;
-  setResultState("generateResultBox", "loading");
-  try {
-    await runTask(
-      "generate",
-      {
-        prompt: $("generatePrompt").value,
-        size: resolveSizeValue("generateSizePreset", "generateCustomSize"),
-        quality: $("generateQuality").value,
-        moderation: $("generateModeration").value,
-      },
-      Math.max(1, Math.min(4, Number($("generateCount").value || 1))),
-      "generateResultBox",
-    );
-  } catch (error) {
-    setResultState("generateResultBox", "error", error.message);
-    showToast(error.message);
-  } finally {
-    submit.disabled = false;
-  }
-});
-
-$("editForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const submit = $("editSubmit");
-  submit.disabled = true;
-  try {
-    const files = state.referenceImageFiles;
-    if (!files.length) {
-      const message = t("referenceRequired", "请先上传或粘贴参考图片");
-      setResultState("editResultBox", "error", message);
-      showToast(message);
-      return;
-    }
-    setResultState("editResultBox", "loading");
-    await runTask(
-      "edit",
-      {
-        prompt: $("editPrompt").value,
-        size: resolveSizeValue("editSizePreset", "editCustomSize"),
-        quality: $("editQuality").value,
-        moderation: $("editModeration").value,
-        data_urls: await Promise.all(files.map(fileToDataUrl)),
-      },
-      Math.max(1, Math.min(4, Number($("editCount").value || 1))),
-      "editResultBox",
-    );
-  } catch (error) {
-    setResultState("editResultBox", "error", error.message);
-    showToast(error.message);
-  } finally {
-    submit.disabled = false;
-  }
-});
 
 await bridge.ready();
 applyI18n();
