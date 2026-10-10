@@ -571,39 +571,20 @@ function renderResultStatus(message) {
   const resultArea = $("createResultArea");
   resultArea.classList.remove("hidden");
 
-  const count = state.createCount || 1;
-  const size = state.createSize || "auto";
-
-  let aspectClass = "aspect-square";
-  if (size === "1024x1536" || size === "1440x2560") {
-    aspectClass = "aspect-portrait";
-  } else if (size === "1536x1024" || size === "2560x1440") {
-    aspectClass = "aspect-landscape";
-  }
-
-  const skeletons = Array.from({ length: count })
-    .map(
-      (_, index) => `
-      <div class="skeleton-card ${aspectClass}">
-        <div class="skeleton-card-inner">
-          <div class="skeleton-glow-orb"></div>
-          <svg class="icon skeleton-sparkle" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
-          </svg>
-          ${count > 1 ? `<div class="skeleton-card-tag">#${index + 1}</div>` : ""}
-        </div>
-      </div>`,
-    )
-    .join("");
-
   resultArea.innerHTML = `
-    <div class="skeleton-loading-container">
-      <div class="skeleton-grid ${count === 1 ? "skeleton-single" : ""}">
-        ${skeletons}
+    <div class="aurora-loading-container">
+      <div class="aurora-ring-wrapper">
+        <div class="aurora-glow"></div>
+        <div class="aurora-ring">
+          <div class="aurora-ring-core"></div>
+        </div>
+        <svg class="icon aurora-center-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
+        </svg>
       </div>
-      <div class="skeleton-status-bar">
-        <div class="skeleton-status-pulse"></div>
-        <span class="skeleton-status-text">${message}</span>
+      <div class="aurora-status-text">${message}</div>
+      <div class="aurora-line-wrapper">
+        <div class="aurora-line"></div>
       </div>
     </div>`;
 }
