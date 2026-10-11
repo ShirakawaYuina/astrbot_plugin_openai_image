@@ -925,6 +925,12 @@ textarea {
   padding: 0 4px;
 }
 
+.result-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .result-tag {
   font-size: 13px;
   font-weight: 700;
@@ -932,6 +938,36 @@ textarea {
   background: var(--primary-soft);
   padding: 3px 10px;
   border-radius: 999px;
+}
+
+.result-time-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  transition: all 160ms ease;
+  user-select: none;
+}
+
+.result-time-badge.is-finished {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.slot-timer {
+  display: inline-block;
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  opacity: 0.9;
 }
 
 .btn.text-btn {

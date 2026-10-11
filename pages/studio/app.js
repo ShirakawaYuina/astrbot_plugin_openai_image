@@ -684,6 +684,8 @@ async function submitCreateTask() {
   const moderation = $("createModeration").value;
   const count = state.createCount;
   const hasReferences = state.referenceImageFiles.length > 0;
+  const startTime = Date.now();
+  let timerInterval = null;
 
   try {
     const finalPrompt = prompt;
@@ -698,7 +700,10 @@ async function submitCreateTask() {
     resultArea.classList.remove("hidden");
     resultArea.innerHTML = `
       <div class="result-header">
-        <span id="resultHeaderTag" class="result-tag">${t("latestResult", "本次生成结果")} (0/${count})</span>
+        <div class="result-header-left">
+          <span id="resultHeaderTag" class="result-tag">${t("latestResult", "本次生成结果")} (0/${count})</span>
+          <span id="resultTimeBadge" class="result-time-badge">⏱ 0.0s</span>
+        </div>
         <button id="hideResultBtn" class="btn text-btn" type="button">${t("collapse", "收起")}</button>
       </div>
       <div class="result-grid ${count === 1 ? "result-single" : "result-multi"}">
@@ -713,7 +718,7 @@ async function submitCreateTask() {
                 <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
               </svg>
             </div>
-            <span class="slot-loading-tag">${count > 1 ? `#${i + 1} · ` : ""}${t("generating", "正在生成图片，请稍候...")}</span>
+            <span class="slot-loading-tag">${count > 1 ? `#${i + 1} · ` : ""}${t("generating", "正在生成图片，请稍候...")} <span class="slot-timer">0.0s</span></span>
           </div>
         `).join("")}
       </div>`;
@@ -721,6 +726,20 @@ async function submitCreateTask() {
     $("hideResultBtn").addEventListener("click", () => {
       resultArea.classList.add("hidden");
     });
+
+    const updateTimer = () => {
+      const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
+      const timeStr = `${elapsedSec}s`;
+      const badge = $("resultTimeBadge");
+      if (badge) {
+        badge.textContent = `⏱ ${timeStr}`;
+      }
+      resultArea.querySelectorAll(".slot-timer").forEach((el) => {
+        el.textContent = timeStr;
+      });
+    };
+
+    timerInterval = window.setInterval(updateTimer, 100);
 
     let dataUrls = [];
     if (hasReferences) {
@@ -789,6 +808,18 @@ async function submitCreateTask() {
 
     await Promise.allSettled(taskPromises);
 
+    if (timerInterval) {
+      window.clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    const finalSec = ((Date.now() - startTime) / 1000).toFixed(1);
+    const timeBadge = $("resultTimeBadge");
+    if (timeBadge) {
+      timeBadge.textContent = `⏱ ${finalSec}s`;
+      timeBadge.classList.add("is-finished");
+    }
+
     const validImages = slots.filter((item) => item && item.data_url);
     state.lastGeneratedImages = validImages;
 
@@ -807,6 +838,10 @@ async function submitCreateTask() {
     renderResultError(error.message);
     showToast(error.message);
   } finally {
+    if (timerInterval) {
+      window.clearInterval(timerInterval);
+      timerInterval = null;
+    }
     state.isGenerating = false;
     $("createSubmitBtn").disabled = !promptInput.value.trim();
     $("optimizePromptBtn").disabled = false;
