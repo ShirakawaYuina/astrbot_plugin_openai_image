@@ -55,14 +55,10 @@
       "promptOptimized": "提示词已优化",
       "settingsHint": "管理提示词优化模型。图片供应商、尺寸和并发等参数请在插件设置页调整。",
       "optimizerModel": "提示词优化模型",
-      "modelName": "模型名称",
-      "baseUrl": "Base URL",
-      "apiKey": "API Key",
+      "defaultModel": "使用 AstrBot 默认模型",
       "saveOptimizer": "保存优化设置",
-      "keyMissing": "API Key 未保存",
-      "keySaved": "API Key 已保存",
       "optimizerSaved": "提示词优化设置已保存",
-      "optimizerHint": "点击生图或编辑页面的“优化”按钮时，会调用这里配置的 OpenAI 兼容 Chat Completions 模型。API Key 留空表示保留已保存的密钥。"
+      "optimizerHint": "点击生图或编辑页面的“优化”按钮时，会调用此处选中的 AstrBot 模型提供商扩写提示词。默认使用 AstrBot 当前对话模型。"
     }
   }
 }

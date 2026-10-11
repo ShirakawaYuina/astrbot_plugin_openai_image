@@ -7,12 +7,8 @@ import base64
 import json
 import mimetypes
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
-
-import aiohttp
 
 from astrbot.api import logger
 from astrbot.api.web import error_response, json_response, request
@@ -44,45 +40,6 @@ PROMPT_OPTIMIZER_SYSTEM_PROMPT = (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class PromptOptimizerSettings:
-    """提示词优化模型配置。
-
-    该功能走独立的 OpenAI 兼容 Chat Completions 接口，避免和图片接口供应商混用；
-    任一关键字段缺失时显式报错，提醒用户到页面设置页补齐配置。
-    """
-
-    model: str
-    base_url: str
-    api_key: str
-    timeout_seconds: int
-
-    @classmethod
-    def from_config(cls, config: dict[str, Any]) -> PromptOptimizerSettings:
-        """从页面保存的配置读取提示词优化模型参数，并校验必填字段。"""
-
-        model = str(config.get("prompt_optimizer_model", "") or "").strip()
-        base_url = (
-            str(config.get("prompt_optimizer_base_url", "") or "").strip().rstrip("/")
-        )
-        api_key = str(config.get("prompt_optimizer_api_key", "") or "").strip()
-        if not model:
-            raise ValueError("请先在页面设置中配置提示词优化模型名称")
-        if not base_url:
-            raise ValueError("请先在页面设置中配置提示词优化 Base URL")
-        if not api_key:
-            raise ValueError("请先在页面设置中配置提示词优化 API Key")
-
-        return cls(
-            model=model,
-            base_url=base_url,
-            api_key=api_key,
-            timeout_seconds=max(
-                5, int(config.get("request_timeout_seconds", 180) or 180)
-            ),
-        )
-
-
 class PromptOptimizerSettingsStore:
     """读写页面设置 Tab 专用的提示词优化配置。"""
 
@@ -102,47 +59,35 @@ class PromptOptimizerSettingsStore:
             raise ValueError("提示词优化配置格式错误")
         return data
 
-    def public_payload(self) -> dict[str, Any]:
-        """返回可给前端展示的配置摘要，API Key 只暴露是否已保存。"""
+    def get_provider_id(self) -> str:
+        """读取当前选中的提供商 ID。"""
 
-        settings = self.load()
-        return {
-            "model": str(settings.get("prompt_optimizer_model", "") or ""),
-            "base_url": str(settings.get("prompt_optimizer_base_url", "") or ""),
-            "has_api_key": bool(
-                str(settings.get("prompt_optimizer_api_key", "") or "").strip()
-            ),
-        }
+        return str(self.load().get("provider_id", "") or "").strip()
 
-    def save_public_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """保存前端提交的模型配置，空 API Key 表示保留旧密钥。
+    def save_provider_id(self, provider_id: str) -> dict[str, Any]:
+        """保存前端提交的提供商 ID。"""
 
-        Args:
-            payload: 页面提交的 model、base_url、api_key 字段。
-
-        Returns:
-            保存后的公开配置摘要。
-        """
-
-        current_settings = self.load()
         next_settings = {
-            "prompt_optimizer_model": str(payload.get("model", "") or "").strip(),
-            "prompt_optimizer_base_url": str(payload.get("base_url", "") or "").strip(),
-            "prompt_optimizer_api_key": str(
-                current_settings.get("prompt_optimizer_api_key", "") or ""
-            ).strip(),
+            "provider_id": str(provider_id or "").strip(),
         }
-
-        new_api_key = str(payload.get("api_key", "") or "").strip()
-        if new_api_key:
-            next_settings["prompt_optimizer_api_key"] = new_api_key
-
         self.settings_path.parent.mkdir(parents=True, exist_ok=True)
         self.settings_path.write_text(
             json.dumps(next_settings, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        return self.public_payload()
+        return next_settings
+
+    def public_payload(self) -> dict[str, Any]:
+        """返回公开配置摘要。"""
+
+        return {"provider_id": self.get_provider_id()}
+
+    def save_public_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """保存前端提交的配置。"""
+
+        return self.save_provider_id(
+            str(payload.get("provider_id", "") or "").strip()
+        )
 
 
 def _default_prompt_optimizer_settings_path() -> Path:
@@ -308,18 +253,61 @@ def create_edit_job(
     return _job
 
 
+def _resolve_optimizer_provider(context: Any, provider_id: str) -> Any:
+    """根据 provider_id 或默认配置解析用于提示词优化的 Provider 实例。
+
+    Args:
+        context: AstrBot 上下文对象。
+        provider_id: 用户配置的提供商 ID（可为空）。
+
+    Returns:
+        匹配的 Provider 实例，未找到时返回 None。
+    """
+
+    if not context:
+        return None
+
+    if provider_id and hasattr(context, "get_provider_by_id"):
+        try:
+            prov = context.get_provider_by_id(provider_id)
+            if prov:
+                return prov
+        except Exception:
+            pass
+
+    if hasattr(context, "get_using_provider"):
+        try:
+            prov = context.get_using_provider()
+            if prov:
+                return prov
+        except Exception:
+            pass
+
+    if hasattr(context, "get_all_providers"):
+        try:
+            provs = context.get_all_providers()
+            if provs:
+                return provs[0]
+        except Exception:
+            pass
+
+    return None
+
+
 async def optimize_prompt_text(
     *,
+    context: Any = None,
     settings_store: PromptOptimizerSettingsStore,
     prompt: str,
     mode: str,
 ) -> str:
-    """调用用户配置的文本模型扩写提示词。
+    """调用 AstrBot 的模型提供商扩写提示词。
 
     页面只负责把当前输入发送给优化模型，并把纯文本结果回填到输入框；
-    配置缺失、网络错误或响应结构异常都会抛出明确异常，避免用户误以为已经优化成功。
+    未找到可用模型、接口请求失败或响应结构不可用时都会抛出明确异常。
 
     Args:
+        context: AstrBot 上下文对象。
         settings_store: 页面设置 Tab 维护的提示词优化配置存储。
         prompt: 用户当前输入的提示词。
         mode: 任务类型，取值 generate 或 edit。
@@ -329,36 +317,42 @@ async def optimize_prompt_text(
 
     Raises:
         ValueError: 提示词为空。
-        RuntimeError: 优化接口请求失败或响应结构不可用。
+        RuntimeError: 未找到可用提供商或模型生成失败。
     """
 
     clean_prompt = str(prompt or "").strip()
     if not clean_prompt:
         raise ValueError("提示词不能为空")
 
-    settings = PromptOptimizerSettings.from_config(settings_store.load())
-    endpoint = _resolve_chat_completions_endpoint(settings.base_url)
-    payload = _build_prompt_optimizer_payload(
-        model=settings.model,
-        prompt=clean_prompt,
-        mode=mode,
-    )
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {settings.api_key}",
-    }
-    timeout = aiohttp.ClientTimeout(total=settings.timeout_seconds)
-    async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
-        try:
-            async with session.post(
-                endpoint, json=payload, headers=headers
-            ) as response:
-                response.raise_for_status()
-                response_data = await response.json()
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"提示词优化接口请求失败: {exc}") from exc
+    provider = _resolve_optimizer_provider(context, settings_store.get_provider_id())
+    if not provider:
+        raise RuntimeError("未找到可用的 AstrBot 对话模型提供商，请先在 AstrBot 设置中配置模型")
 
-    optimized_prompt = _extract_optimized_prompt(response_data)
+    mode_label = PROMPT_OPTIMIZER_MODE_LABELS.get(str(mode or "").strip(), "图片生成")
+    user_prompt = (
+        f"当前任务类型：{mode_label}\n"
+        "请优化以下提示词，使其更具体、更适合图像模型执行：\n"
+        f"{clean_prompt}"
+    )
+
+    try:
+        response = await provider.text_chat(
+            prompt=user_prompt,
+            system_prompt=PROMPT_OPTIMIZER_SYSTEM_PROMPT,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"提示词优化接口请求失败: {exc}") from exc
+
+    if getattr(response, "role", None) == "err":
+        error_msg = getattr(response, "completion_text", "") or "模型生成失败"
+        raise RuntimeError(f"提示词优化失败: {error_msg}")
+
+    optimized_prompt = str(getattr(response, "completion_text", "") or "").strip()
+    if optimized_prompt.startswith("```") and optimized_prompt.endswith("```"):
+        lines = optimized_prompt.splitlines()
+        if len(lines) >= 2:
+            optimized_prompt = "\n".join(lines[1:-1]).strip()
+
     if not optimized_prompt:
         raise RuntimeError("提示词优化接口未返回可用文本")
     return optimized_prompt
@@ -642,6 +636,7 @@ class ImageStudioApi:
 
         try:
             optimized_prompt = await optimize_prompt_text(
+                context=getattr(self.plugin, "context", None),
                 settings_store=self.prompt_optimizer_settings,
                 prompt=prompt,
                 mode=mode,
@@ -664,12 +659,57 @@ class ImageStudioApi:
         return json_response({"prompt": optimized_prompt})
 
     async def get_prompt_optimizer_settings(self) -> Any:
-        """读取页面提示词优化设置，密钥只返回是否存在。"""
+        """读取页面提示词优化设置及 AstrBot 可选的模型提供商列表。"""
 
-        try:
-            return json_response(self.prompt_optimizer_settings.public_payload())
-        except ValueError as exc:
-            return error_response(str(exc), status_code=500)
+        context = getattr(self.plugin, "context", None)
+        providers_info: list[dict[str, str]] = []
+        default_model = ""
+
+        if context:
+            if hasattr(context, "get_using_provider"):
+                try:
+                    default_prov = context.get_using_provider()
+                    if default_prov:
+                        default_model = str(
+                            default_prov.get_model()
+                            if hasattr(default_prov, "get_model")
+                            else getattr(default_prov, "model_name", "")
+                        )
+                except Exception:
+                    pass
+
+            if hasattr(context, "get_all_providers"):
+                try:
+                    for p in context.get_all_providers():
+                        meta = p.meta() if hasattr(p, "meta") else None
+                        pid = str(
+                            getattr(meta, "id", "") or getattr(p, "id", "") or ""
+                        )
+                        pmodel = str(
+                            p.get_model()
+                            if hasattr(p, "get_model")
+                            else getattr(meta, "model", "")
+                        )
+                        ptype = str(getattr(meta, "type", "") or "")
+                        if pid:
+                            providers_info.append(
+                                {
+                                    "id": pid,
+                                    "model": pmodel,
+                                    "type": ptype,
+                                }
+                            )
+                except Exception:
+                    pass
+
+        selected_id = self.prompt_optimizer_settings.get_provider_id()
+        return json_response(
+            {
+                "provider_id": selected_id,
+                "providers": providers_info,
+                "default_model": default_model,
+            }
+        )
 
     async def save_prompt_optimizer_settings(self) -> Any:
         """保存页面提示词优化设置。"""
@@ -678,18 +718,13 @@ class ImageStudioApi:
         if not isinstance(payload, dict):
             return error_response("请求体必须是 JSON 对象")
 
-        try:
-            saved_payload = self.prompt_optimizer_settings.save_public_payload(payload)
-        except ValueError as exc:
-            return error_response(str(exc), status_code=500)
-
+        provider_id = str(payload.get("provider_id", "") or "").strip()
+        self.prompt_optimizer_settings.save_provider_id(provider_id)
         logger.info(
-            "[OpenAIImage][webui][prompt_optimizer] 设置已保存 model=%s base_url=%s has_api_key=%s",
-            saved_payload["model"] or "-",
-            saved_payload["base_url"] or "-",
-            saved_payload["has_api_key"],
+            "[OpenAIImage][webui][prompt_optimizer] 设置已保存 provider_id=%s",
+            provider_id or "(default)",
         )
-        return json_response(saved_payload)
+        return await self.get_prompt_optimizer_settings()
 
     def _task_response(self, task_result: dict[str, Any]) -> Any:
         """将任务服务的统一结果转换为页面 JSON 响应。"""
@@ -772,83 +807,7 @@ class ImageStudioApi:
             return f"unknown({exc.__class__.__name__})"
 
 
-def _resolve_chat_completions_endpoint(base_url: str) -> str:
-    """根据 Base URL 推导 OpenAI 兼容 Chat Completions 接口地址。"""
 
-    normalized = str(base_url or "").strip().rstrip("/")
-    if not normalized:
-        raise ValueError("提示词优化 Base URL 不能为空")
-
-    chat_suffix = "/chat/completions"
-    if normalized.endswith(chat_suffix):
-        return normalized
-
-    parsed = urlsplit(normalized)
-    base_path = parsed.path.rstrip("/")
-    merged_path = f"{base_path}{chat_suffix}" if base_path else chat_suffix
-    return urlunsplit((parsed.scheme, parsed.netloc, merged_path, "", ""))
-
-
-def _build_prompt_optimizer_payload(
-    *,
-    model: str,
-    prompt: str,
-    mode: str,
-) -> dict[str, Any]:
-    """构造提示词优化请求体，集中约束模型只返回最终提示词。"""
-
-    mode_label = PROMPT_OPTIMIZER_MODE_LABELS.get(str(mode or "").strip(), "图片生成")
-    user_prompt = (
-        f"当前任务类型：{mode_label}\n"
-        "请优化以下提示词，使其更具体、更适合图像模型执行：\n"
-        f"{prompt}"
-    )
-    return {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": PROMPT_OPTIMIZER_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.7,
-    }
-
-
-def _extract_optimized_prompt(response_data: Any) -> str:
-    """从 Chat Completions 响应中提取助手文本。"""
-
-    if not isinstance(response_data, dict):
-        raise RuntimeError(
-            f"提示词优化接口响应结构异常: {type(response_data).__name__}"
-        )
-
-    choices = response_data.get("choices")
-    if not isinstance(choices, list) or not choices:
-        raise RuntimeError("提示词优化接口响应缺少 choices")
-
-    first_choice = choices[0]
-    if not isinstance(first_choice, dict):
-        raise RuntimeError("提示词优化接口响应 choices[0] 不是对象")
-
-    message = first_choice.get("message")
-    if not isinstance(message, dict):
-        raise RuntimeError("提示词优化接口响应缺少 message")
-
-    content = message.get("content")
-    if isinstance(content, str):
-        return content.strip()
-
-    # 部分兼容服务会把 content 返回为多段结构，这里只拼接文本段，不把未知段伪装为成功内容。
-    if isinstance(content, list):
-        text_parts: list[str] = []
-        for item in content:
-            if not isinstance(item, dict):
-                continue
-            text = item.get("text")
-            if isinstance(text, str) and text.strip():
-                text_parts.append(text.strip())
-        return "\n".join(text_parts).strip()
-
-    raise RuntimeError("提示词优化接口响应 message.content 不是文本")
 
 
 def _truncate_log_text(value: str, max_length: int = LOG_PROMPT_MAX_LENGTH) -> str:

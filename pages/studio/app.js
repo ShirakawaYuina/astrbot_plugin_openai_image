@@ -7,7 +7,6 @@
  */
 const bridge = window.AstrBotPluginPage;
 const PAGE_I18N_KEY = "pages.studio";
-const PROMPT_OPTIMIZER_API_KEY_MASK = "********";
 const GALLERY_PAGE_SIZE = 24;
 const REFERENCE_IMAGE_PREVIEW_URLS = new WeakMap();
 // 浮层缩放范围：下限是「适应屏幕」，保证图片永远不会比整屏还小。
@@ -135,14 +134,29 @@ function resizePromptTextareas() {
 }
 
 function renderPromptOptimizerSettings(settings) {
-  $("promptOptimizerModel").value = settings.model || "";
-  $("promptOptimizerBaseUrl").value = settings.base_url || "";
-  $("promptOptimizerApiKey").value = settings.has_api_key
-    ? PROMPT_OPTIMIZER_API_KEY_MASK
-    : "";
-  $("promptOptimizerKeyState").textContent = settings.has_api_key
-    ? t("keySaved", "API Key 已保存")
-    : t("keyMissing", "API Key 未保存");
+  const select = $("promptOptimizerProvider");
+  const selectedId = settings.provider_id || "";
+  const defaultLabel = settings.default_model
+    ? `${t("defaultModel", "使用 AstrBot 默认模型")} (${settings.default_model})`
+    : t("defaultModel", "使用 AstrBot 默认模型");
+
+  select.innerHTML = "";
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = defaultLabel;
+  select.appendChild(defaultOption);
+
+  const providers = Array.isArray(settings.providers) ? settings.providers : [];
+  providers.forEach((prov) => {
+    const opt = document.createElement("option");
+    opt.value = prov.id;
+    const modelName = prov.model || prov.id;
+    opt.textContent =
+      prov.id !== modelName ? `${modelName} (${prov.id})` : prov.id;
+    select.appendChild(opt);
+  });
+
+  select.value = selectedId;
 }
 
 async function loadPromptOptimizerSettings() {
@@ -153,11 +167,8 @@ async function savePromptOptimizerSettings() {
   const button = $("savePromptOptimizerSettingsBtn");
   button.disabled = true;
   try {
-    const apiKeyInput = $("promptOptimizerApiKey").value;
     const settings = await bridge.apiPost("prompt-optimizer-settings", {
-      model: $("promptOptimizerModel").value,
-      base_url: $("promptOptimizerBaseUrl").value,
-      api_key: apiKeyInput === PROMPT_OPTIMIZER_API_KEY_MASK ? "" : apiKeyInput,
+      provider_id: $("promptOptimizerProvider").value,
     });
     renderPromptOptimizerSettings(settings);
     showToast(t("optimizerSaved", "提示词优化设置已保存"));

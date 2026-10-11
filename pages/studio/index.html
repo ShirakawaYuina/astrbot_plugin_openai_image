@@ -226,26 +226,16 @@
         <p class="muted" data-i18n="settingsHint">管理提示词优化模型。图片供应商、尺寸和并发等参数请在插件设置页调整。</p>
       </div>
       <div class="settings-card">
-        <label data-i18n="optimizerModel">提示词优化模型</label>
-        <div class="settings-form-grid">
-          <div>
-            <label for="promptOptimizerModel" data-i18n="modelName">模型名称</label>
-            <input id="promptOptimizerModel" class="control" type="text" placeholder="gpt-5.4-mini" />
-          </div>
-          <div>
-            <label for="promptOptimizerBaseUrl" data-i18n="baseUrl">Base URL</label>
-            <input id="promptOptimizerBaseUrl" class="control" type="text" placeholder="https://api.openai.com/v1" />
-          </div>
-          <div>
-            <label for="promptOptimizerApiKey" data-i18n="apiKey">API Key</label>
-            <input id="promptOptimizerApiKey" class="control" type="password" autocomplete="off" />
-          </div>
+        <label for="promptOptimizerProvider" data-i18n="optimizerModel">提示词优化模型</label>
+        <div>
+          <select id="promptOptimizerProvider" class="control">
+            <option value="" data-i18n="defaultModel">使用 AstrBot 默认模型</option>
+          </select>
         </div>
         <div class="settings-actions">
           <button id="savePromptOptimizerSettingsBtn" class="btn primary" type="button" data-i18n="saveOptimizer">保存优化设置</button>
-          <span id="promptOptimizerKeyState" class="muted" data-i18n="keyMissing">API Key 未保存</span>
         </div>
-        <p class="muted" data-i18n="optimizerHint">点击生图或编辑页面的“优化”按钮时，会调用这里配置的 OpenAI 兼容 Chat Completions 模型。API Key 留空表示保留已保存的密钥。</p>
+        <p class="muted" data-i18n="optimizerHint">点击生图或编辑页面的“优化”按钮时，会调用此处选中的 AstrBot 模型提供商扩写提示词。默认使用 AstrBot 当前对话模型。</p>
       </div>
     </section>
 

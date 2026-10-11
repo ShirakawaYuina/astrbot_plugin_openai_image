@@ -463,15 +463,9 @@ async def test_edit_image_requires_reference_images(tmp_path: Path):
 async def test_optimize_prompt_returns_optimized_text(tmp_path: Path, monkeypatch):
     module = _load_module()
     api, _cache_dir = _build_studio_api(tmp_path)
-    api.prompt_optimizer_settings.save_public_payload(
-        {
-            "model": "gpt-test",
-            "base_url": "https://api.example.com/v1",
-            "api_key": "secret-key",
-        }
-    )
+    api.prompt_optimizer_settings.save_provider_id("custom_provider")
 
-    async def fake_optimize_prompt_text(*, settings_store, prompt, mode):
+    async def fake_optimize_prompt_text(*, context, settings_store, prompt, mode):
         assert settings_store is api.prompt_optimizer_settings
         assert prompt == "浅色自然光下的现代别墅"
         assert mode == "generate"
@@ -493,114 +487,135 @@ async def test_optimize_prompt_reports_missing_configuration(tmp_path: Path):
         response = await api.optimize_prompt()
 
     assert response.status_code == 500
-    assert "提示词优化模型名称" in _read_json(response)["message"]
+    assert "未找到可用的 AstrBot 对话模型提供商" in _read_json(response)["message"]
 
 
 @pytest.mark.asyncio
-async def test_prompt_optimizer_settings_round_trip_hides_api_key(tmp_path: Path):
-    api, _cache_dir = _build_studio_api(tmp_path)
+async def test_prompt_optimizer_settings_round_trip(tmp_path: Path):
+    fake_provider = SimpleNamespace(
+        meta=lambda: SimpleNamespace(id="openai_1", model="gpt-4o", type="openai"),
+        get_model=lambda: "gpt-4o",
+    )
+    fake_context = SimpleNamespace(
+        get_all_providers=lambda: [fake_provider],
+        get_using_provider=lambda: fake_provider,
+        get_provider_by_id=lambda pid: fake_provider if pid == "openai_1" else None,
+    )
+    api, _cache_dir = _build_studio_api(
+        tmp_path, plugin=SimpleNamespace(context=fake_context)
+    )
 
-    with _bind_request(
-        body={
-            "model": "gpt-test",
-            "base_url": "https://api.example.com/v1",
-            "api_key": "secret-key",
-        }
-    ):
+    with _bind_request(body={"provider_id": "openai_1"}):
         saved = _read_json(await api.save_prompt_optimizer_settings())
 
-    assert saved == {
-        "model": "gpt-test",
-        "base_url": "https://api.example.com/v1",
-        "has_api_key": True,
-    }
+    assert saved["provider_id"] == "openai_1"
+    assert saved["default_model"] == "gpt-4o"
+    assert saved["providers"] == [
+        {"id": "openai_1", "model": "gpt-4o", "type": "openai"}
+    ]
 
     with _bind_request():
         loaded = _read_json(await api.get_prompt_optimizer_settings())
 
     assert loaded == saved
-    assert "api_key" not in loaded
 
 
-def test_prompt_optimizer_settings_require_all_fields():
-    module = _load_module()
-
-    with pytest.raises(ValueError, match="模型名称"):
-        module.PromptOptimizerSettings.from_config({})
-
-    with pytest.raises(ValueError, match="Base URL"):
-        module.PromptOptimizerSettings.from_config({"prompt_optimizer_model": "gpt"})
-
-    with pytest.raises(ValueError, match="API Key"):
-        module.PromptOptimizerSettings.from_config(
-            {
-                "prompt_optimizer_model": "gpt",
-                "prompt_optimizer_base_url": "https://api.example.com/v1",
-            }
-        )
-
-
-def test_prompt_optimizer_settings_store_keeps_existing_api_key(tmp_path: Path):
+def test_prompt_optimizer_settings_store_saves_provider_id(tmp_path: Path):
     module = _load_module()
     settings_path = tmp_path / "prompt_optimizer_settings.json"
     store = module.PromptOptimizerSettingsStore(settings_path)
 
-    saved = store.save_public_payload(
-        {
-            "model": " gpt-test ",
-            "base_url": " https://api.example.com/v1 ",
-            "api_key": " secret-key ",
-        }
-    )
+    assert store.get_provider_id() == ""
 
-    assert saved == {
-        "model": "gpt-test",
-        "base_url": "https://api.example.com/v1",
-        "has_api_key": True,
-    }
+    saved = store.save_provider_id("deepseek_1")
+    assert saved == {"provider_id": "deepseek_1"}
+    assert store.get_provider_id() == "deepseek_1"
     assert json.loads(settings_path.read_text(encoding="utf-8")) == {
-        "prompt_optimizer_model": "gpt-test",
-        "prompt_optimizer_base_url": "https://api.example.com/v1",
-        "prompt_optimizer_api_key": "secret-key",
+        "provider_id": "deepseek_1"
     }
 
-    saved_without_key = store.save_public_payload(
-        {
-            "model": "gpt-next",
-            "base_url": "https://api.next.example.com/v1",
-            "api_key": "",
-        }
-    )
 
-    assert saved_without_key["has_api_key"] is True
-    assert store.load()["prompt_optimizer_api_key"] == "secret-key"
-
-
-def test_prompt_optimizer_endpoint_and_response_parser():
+@pytest.mark.asyncio
+async def test_optimize_prompt_text_calls_provider_text_chat(tmp_path: Path):
     module = _load_module()
+    settings_path = tmp_path / "prompt_optimizer_settings.json"
+    store = module.PromptOptimizerSettingsStore(settings_path)
 
-    assert (
-        module._resolve_chat_completions_endpoint("https://api.example.com/v1")
-        == "https://api.example.com/v1/chat/completions"
+    chat_called = {}
+
+    class FakeProvider:
+        def __init__(self, model="gpt-4o", pid="openai_1"):
+            self.model = model
+            self.id = pid
+
+        def get_model(self):
+            return self.model
+
+        def meta(self):
+            return SimpleNamespace(id=self.id, model=self.model, type="openai")
+
+        async def text_chat(self, prompt, system_prompt):
+            chat_called["prompt"] = prompt
+            chat_called["system_prompt"] = system_prompt
+            return SimpleNamespace(
+                role="assistant",
+                completion_text="```\n湖边晨雾中的木屋，电影质感光影\n```",
+            )
+
+    provider = FakeProvider()
+    context = SimpleNamespace(
+        get_all_providers=lambda: [provider],
+        get_using_provider=lambda: provider,
+        get_provider_by_id=lambda pid: provider if pid == "openai_1" else None,
     )
-    assert (
-        module._resolve_chat_completions_endpoint(
-            "https://api.example.com/v1/chat/completions"
+
+    # 1. 默认未设置 provider_id 时，自动使用默认模型
+    result = await module.optimize_prompt_text(
+        context=context,
+        settings_store=store,
+        prompt="湖边木屋",
+        mode="generate",
+    )
+
+    assert result == "湖边晨雾中的木屋，电影质感光影"
+    assert "当前任务类型：文生图" in chat_called["prompt"]
+    assert "湖边木屋" in chat_called["prompt"]
+    assert chat_called["system_prompt"] == module.PROMPT_OPTIMIZER_SYSTEM_PROMPT
+
+    # 2. 设置指定 provider_id
+    store.save_provider_id("openai_1")
+    result2 = await module.optimize_prompt_text(
+        context=context,
+        settings_store=store,
+        prompt="湖边木屋",
+        mode="generate",
+    )
+    assert result2 == "湖边晨雾中的木屋，电影质感光影"
+
+
+@pytest.mark.asyncio
+async def test_optimize_prompt_text_handles_error_response(tmp_path: Path):
+    module = _load_module()
+    settings_path = tmp_path / "prompt_optimizer_settings.json"
+    store = module.PromptOptimizerSettingsStore(settings_path)
+
+    class ErrorProvider:
+        async def text_chat(self, prompt, system_prompt):
+            return SimpleNamespace(role="err", completion_text="Rate limit exceeded")
+
+    provider = ErrorProvider()
+    context = SimpleNamespace(
+        get_all_providers=lambda: [provider],
+        get_using_provider=lambda: provider,
+    )
+
+    with pytest.raises(RuntimeError, match="Rate limit exceeded"):
+        await module.optimize_prompt_text(
+            context=context,
+            settings_store=store,
+            prompt="湖边木屋",
+            mode="generate",
         )
-        == "https://api.example.com/v1/chat/completions"
-    )
-    assert (
-        module._extract_optimized_prompt(
-            {"choices": [{"message": {"content": "  优化后的提示词  "}}]}
-        )
-        == "优化后的提示词"
-    )
-    assert (
-        module._extract_optimized_prompt(
-            {"choices": [{"message": {"content": [{"text": "第一段"}, {"text": "第二段"}]}}]}
-        )
-        == "第一段\n第二段"
-    )
 
 
 # --- 日志 ---
