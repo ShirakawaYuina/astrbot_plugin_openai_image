@@ -180,7 +180,8 @@ async function savePromptOptimizerSettings() {
 }
 
 async function optimizePrompt(button) {
-  const textarea = $(button.dataset.promptTarget);
+  if (state.isGenerating) return;
+  const textarea = $(button.dataset.promptTarget || "createPrompt");
   const prompt = textarea.value.trim();
   if (!prompt) {
     showToast(t("promptRequired", "请先输入提示词"));
@@ -188,16 +189,18 @@ async function optimizePrompt(button) {
     return;
   }
 
+  const hasReferences = state.referenceImageFiles.length > 0;
+  const mode = hasReferences ? "edit" : "generate";
   const label = button.querySelector("span");
-  const originalLabel = label.textContent;
+  const originalLabel = label ? label.textContent : button.textContent;
   button.disabled = true;
   textarea.disabled = true;
   button.classList.add("is-loading");
-  label.textContent = t("optimizing", "优化中");
+  if (label) label.textContent = t("optimizing", "优化中");
   try {
     const data = await bridge.apiPost("optimize-prompt", {
       prompt,
-      mode: button.dataset.promptMode || "generate",
+      mode,
     });
     textarea.value = data.prompt || "";
     resizePromptTextarea(textarea);
@@ -205,11 +208,13 @@ async function optimizePrompt(button) {
   } catch (error) {
     showToast(error.message);
   } finally {
-    label.textContent = originalLabel;
+    if (label) label.textContent = originalLabel;
     button.classList.remove("is-loading");
     textarea.disabled = false;
     button.disabled = false;
     textarea.focus();
+    $("createSubmitBtn").disabled =
+      !textarea.value.trim() || state.isGenerating;
   }
 }
 
@@ -668,6 +673,7 @@ async function submitCreateTask() {
 
   state.isGenerating = true;
   $("createSubmitBtn").disabled = true;
+  $("optimizePromptBtn").disabled = true;
 
   let sizeValue = state.createSize;
   if (sizeValue === "custom") {
@@ -680,24 +686,7 @@ async function submitCreateTask() {
   const hasReferences = state.referenceImageFiles.length > 0;
 
   try {
-    let finalPrompt = prompt;
-
-    if ($("autoOptimizeToggle").checked) {
-      renderResultStatus(t("optimizing", "正在优化提示词..."));
-      try {
-        const optimizeRes = await bridge.apiPost("optimize-prompt", {
-          prompt,
-          mode: hasReferences ? "edit" : "generate",
-        });
-        if (optimizeRes && optimizeRes.prompt) {
-          finalPrompt = optimizeRes.prompt;
-          promptInput.value = finalPrompt;
-          resizePromptTextarea(promptInput);
-        }
-      } catch (optErr) {
-        showToast(`提示词优化异常: ${optErr.message}，将使用原提示词`);
-      }
-    }
+    const finalPrompt = prompt;
 
     let slotAspect = "1 / 1";
     if (sizeValue) {
@@ -820,6 +809,7 @@ async function submitCreateTask() {
   } finally {
     state.isGenerating = false;
     $("createSubmitBtn").disabled = !promptInput.value.trim();
+    $("optimizePromptBtn").disabled = false;
   }
 }
 
@@ -890,6 +880,10 @@ $("createPrompt").addEventListener("keydown", (event) => {
 
 $("createSubmitBtn").addEventListener("click", () => {
   submitCreateTask();
+});
+
+$("optimizePromptBtn").addEventListener("click", () => {
+  optimizePrompt($("optimizePromptBtn"));
 });
 
 $("sizeDropdownBtn").addEventListener("click", (event) => {

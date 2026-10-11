@@ -199,12 +199,13 @@
                   </div>
                 </div>
 
-                <!-- 提示词自动优化开关 -->
-                <label class="toggle-switch" title="开启后在生成前自动优化扩写提示词">
-                  <input id="autoOptimizeToggle" type="checkbox" />
-                  <span class="toggle-slider"></span>
-                  <span class="toggle-label" data-i18n="autoOptimize">优化</span>
-                </label>
+                <!-- 提示词优化按钮 -->
+                <button id="optimizePromptBtn" class="tool-btn optimize-btn" type="button" title="优化扩写当前提示词" data-prompt-target="createPrompt">
+                  <svg class="icon tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
+                  </svg>
+                  <span data-i18n="optimizePrompt">优化</span>
+                </button>
 
                 <!-- 圆形主发送按钮 -->
                 <button id="createSubmitBtn" class="send-btn" type="button" disabled title="发送 (Enter 或 Ctrl+Enter)">

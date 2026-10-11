@@ -35,7 +35,7 @@
       "heroTitle": "欢迎体验图像创作，今天想创作什么？",
       "createPromptPlaceholder": "输入你的图像创作想法",
       "imageBadge": "图片",
-      "autoOptimize": "优化",
+      "optimizePrompt": "优化",
       "latestResult": "本次生成结果",
       "collapse": "收起",
       "retry": "重试",

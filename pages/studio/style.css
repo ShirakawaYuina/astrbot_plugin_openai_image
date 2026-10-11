@@ -815,60 +815,40 @@ textarea {
   font-size: 12px;
 }
 
-/* 提示词优化开关 */
-.toggle-switch {
+/* 提示词优化按钮 */
+.optimize-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  user-select: none;
+  transition: all 140ms ease;
 }
 
-.toggle-switch input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
+.optimize-btn:hover:not(:disabled) {
+  background: rgba(43, 90, 237, 0.08);
+  border-color: rgba(43, 90, 237, 0.3);
+  color: var(--primary);
 }
 
-.toggle-slider {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  background: #d4dce8;
-  border-radius: 999px;
-  transition: background 160ms ease;
+.optimize-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
-.toggle-slider::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  transition: transform 160ms ease;
+.optimize-btn.is-loading {
+  cursor: wait;
 }
 
-.toggle-switch input:checked + .toggle-slider {
-  background: var(--primary);
-}
-
-.toggle-switch input:checked + .toggle-slider::after {
-  transform: translateX(16px);
-}
-
-.toggle-label {
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-[data-theme="dark"] .toggle-slider {
-  background: #2a3342;
+.optimize-btn.is-loading .tool-icon {
+  animation: spin 1s linear infinite;
 }
 
 /* 主发送按钮 */
