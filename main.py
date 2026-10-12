@@ -19,6 +19,7 @@ from astrbot.core.message.message_event_result import MessageEventResult
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
 from .core.commands import normalize_output_size, parse_command_payload
+from .core.gateways.local_image_gateway import LocalImageGateway
 from .core.gateways.openai_image_gateway import OpenAIImageGateway
 from .core.models import ParsedCommand
 from .core.presenters.result_presenter import ResultPresenter
@@ -1114,12 +1115,7 @@ class OpenAIImagePlugin(Star):
             max_cache_images=int(self.config.get("max_cache_images", 50) or 50),
         )
 
-        self._image_gateway = OpenAIImageGateway(
-            base_url=active_provider.base_url,
-            api_key=active_provider.api_key,
-            timeout_seconds=int(self.config.get("request_timeout_seconds", 180) or 180),
-            proxy_url=active_provider.proxy_url,
-        )
+        self._image_gateway = self._create_image_gateway(active_provider)
         self._generate_service = ImageGenerateService(
             gateway=self._image_gateway,
             cache_store=self._cache_store,
@@ -1132,6 +1128,30 @@ class OpenAIImagePlugin(Star):
             max_concurrency=int(self.config.get("max_concurrency", 2) or 2),
         )
         self._studio_api = ImageStudioApi(plugin=self, cache_dir=cache_root)
+
+    def _create_image_gateway(
+        self,
+        provider: ImageProviderConfig,
+    ) -> OpenAIImageGateway:
+        """根据供应商配置创建对应的网关后端。
+
+        若 provider_id 以 local 开头，使用带健康检查的 LocalImageGateway；
+        否则使用标准 OpenAIImageGateway。
+        """
+        timeout = int(self.config.get("request_timeout_seconds", 180) or 180)
+        if provider.provider_id.strip().lower().startswith("local"):
+            return LocalImageGateway(
+                base_url=provider.base_url,
+                api_key=provider.api_key,
+                timeout_seconds=timeout,
+                proxy_url=provider.proxy_url,
+            )
+        return OpenAIImageGateway(
+            base_url=provider.base_url,
+            api_key=provider.api_key,
+            timeout_seconds=timeout,
+            proxy_url=provider.proxy_url,
+        )
 
     def _ensure_ready(self) -> None:
         """确保运行时依赖已初始化。"""
@@ -1155,10 +1175,12 @@ class OpenAIImagePlugin(Star):
             self._active_image_provider = resolve_active_image_provider(self.config)
             self._last_loaded_active_provider_id = self._active_image_provider.provider_id
             self._providers_mtime = current_mtime
-            if self._image_gateway is not None and hasattr(self._image_gateway, "base_url"):
-                self._image_gateway.base_url = self._active_image_provider.base_url
-                self._image_gateway.api_key = self._active_image_provider.api_key
-                self._image_gateway.proxy_url = self._active_image_provider.proxy_url
+            new_gateway = self._create_image_gateway(self._active_image_provider)
+            self._image_gateway = new_gateway
+            if self._generate_service is not None:
+                self._generate_service.gateway = new_gateway
+            if self._edit_service is not None:
+                self._edit_service.gateway = new_gateway
 
         return self._active_image_provider
 
