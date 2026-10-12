@@ -179,6 +179,8 @@ def test_register_declares_expected_routes(tmp_path: Path):
         (f"/{module.PLUGIN_NAME}/optimize-prompt", ["POST"]),
         (f"/{module.PLUGIN_NAME}/prompt-optimizer-settings", ["GET"]),
         (f"/{module.PLUGIN_NAME}/prompt-optimizer-settings", ["POST"]),
+        (f"/{module.PLUGIN_NAME}/image-provider-settings", ["GET"]),
+        (f"/{module.PLUGIN_NAME}/image-provider-settings", ["POST"]),
     ]
 
 
@@ -518,6 +520,58 @@ async def test_prompt_optimizer_settings_round_trip(tmp_path: Path):
         loaded = _read_json(await api.get_prompt_optimizer_settings())
 
     assert loaded == saved
+
+
+@pytest.mark.asyncio
+async def test_image_provider_settings_round_trip(tmp_path: Path):
+    from astrbot_plugin_openai_image.core.provider_config import ImageProviderConfig
+
+    providers = [
+        ImageProviderConfig(
+            provider_id="default",
+            name="默认供应商",
+            base_url="https://default.com/v1",
+            api_key="",
+            proxy_url="",
+            model="gpt-5.4-mini",
+            endpoint_type="responses",
+        ),
+        ImageProviderConfig(
+            provider_id="custom",
+            name="自定义供应商",
+            base_url="https://custom.com/v1",
+            api_key="",
+            proxy_url="",
+            model="dall-e-3",
+            endpoint_type="images",
+        ),
+    ]
+    fake_plugin = SimpleNamespace(
+        config={"active_provider_id": "default"},
+        _load_configured_providers=lambda: providers,
+        _get_active_image_provider=lambda: next(
+            p for p in providers if p.provider_id == fake_plugin.config["active_provider_id"]
+        ),
+        _rebuild_runtime_dependencies=lambda: None,
+        _sync_schema_provider_options=lambda: None,
+    )
+    api, _cache_dir = _build_studio_api(tmp_path, plugin=fake_plugin)
+
+    with _bind_request():
+        initial = _read_json(await api.get_image_provider_settings())
+    assert initial["active_provider_id"] == "default"
+    assert initial["active_model"] == "gpt-5.4-mini"
+    assert len(initial["providers"]) == 2
+
+    with _bind_request(body={"active_provider_id": "custom"}):
+        saved = _read_json(await api.save_image_provider_settings())
+    assert saved["active_provider_id"] == "custom"
+    assert saved["active_model"] == "dall-e-3"
+    assert fake_plugin.config["active_provider_id"] == "custom"
+
+    with _bind_request(body={"active_provider_id": "nonexistent"}):
+        err = _read_json(await api.save_image_provider_settings())
+    assert "未找到指定的图片供应商" in err["message"]
 
 
 def test_prompt_optimizer_settings_store_saves_provider_id(tmp_path: Path):

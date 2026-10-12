@@ -24,7 +24,10 @@ from .core.models import ParsedCommand
 from .core.presenters.result_presenter import ResultPresenter
 from .core.provider_config import (
     ImageProviderConfig,
+    get_default_providers_path,
+    load_providers_from_file,
     resolve_active_image_provider,
+    sync_schema_provider_options,
 )
 from .core.services.image_edit_service import ImageEditService
 from .core.services.image_generate_service import ImageGenerateService
@@ -62,6 +65,9 @@ class OpenAIImagePlugin(Star):
         self._task_service: ImageTaskService | None = None
         self._active_image_provider: ImageProviderConfig | None = None
         self._studio_api: ImageStudioApi | None = None
+        self._last_loaded_active_provider_id: str | None = None
+        self._providers_mtime: float = self._get_providers_file_mtime()
+        self._sync_schema_provider_options()
 
     async def initialize(self) -> None:
         """初始化插件运行时依赖。"""
@@ -1055,11 +1061,47 @@ class OpenAIImagePlugin(Star):
         guessed = mimetypes.guess_type(image_path)[0]
         return guessed or "image/png"
 
+    def _get_providers_file_mtime(self) -> float:
+        """获取 providers.json 文件的最后修改时间戳。"""
+        try:
+            path = get_default_providers_path()
+            if path.is_file():
+                return path.stat().st_mtime
+        except Exception:
+            pass
+        return 0.0
+
+    def _load_configured_providers(self) -> list[ImageProviderConfig]:
+        """读取当前配置的图片供应商列表。"""
+        legacy = self.config.get("image_providers")
+        legacy_list = legacy if isinstance(legacy, list) else None
+        return load_providers_from_file(legacy_providers=legacy_list)
+
+    def _sync_schema_provider_options(self) -> None:
+        """从 providers.json 同步供应商选项与名称到 AstrBot 的配置 Schema 中。"""
+        providers = self._load_configured_providers()
+        if not providers:
+            return
+
+        if hasattr(self.config, "schema") and isinstance(self.config.schema, dict):
+            sync_schema_provider_options(self.config.schema, providers)
+
+        try:
+            from astrbot.core.star.star_manager import star_registry
+
+            for meta in star_registry:
+                if meta.name == PLUGIN_NAME and meta.config and hasattr(meta.config, "schema"):
+                    sync_schema_provider_options(meta.config.schema, providers)
+        except Exception:
+            pass
+
     def _rebuild_runtime_dependencies(self) -> None:
         """根据当前配置重建运行时依赖。"""
 
         active_provider = resolve_active_image_provider(self.config)
         self._active_image_provider = active_provider
+        self._last_loaded_active_provider_id = active_provider.provider_id
+        self._providers_mtime = self._get_providers_file_mtime()
 
         self.presenter = ResultPresenter(
             send_mode=str(self.config.get("image_send_mode", "base64") or "base64"),
@@ -1098,11 +1140,26 @@ class OpenAIImagePlugin(Star):
             self._rebuild_runtime_dependencies()
 
     def _get_active_image_provider(self) -> ImageProviderConfig:
-        """读取当前启用供应商，必要时重新解析供应商配置。"""
+        """读取当前启用供应商，检测到配置或文件变更时更新供应商。"""
 
-        if self._active_image_provider is None:
-            # initialize 日志可能在依赖重建后读取该对象；这里保留兜底，防止测试或热重载流程绕过重建。
+        current_active_id = str(
+            self.config.get("active_provider_id", "default") or "default"
+        ).strip()
+        current_mtime = self._get_providers_file_mtime()
+        need_reload = (
+            self._active_image_provider is None
+            or self._last_loaded_active_provider_id != current_active_id
+            or (current_mtime > 0.0 and self._providers_mtime != current_mtime)
+        )
+        if need_reload:
             self._active_image_provider = resolve_active_image_provider(self.config)
+            self._last_loaded_active_provider_id = self._active_image_provider.provider_id
+            self._providers_mtime = current_mtime
+            if self._image_gateway is not None and hasattr(self._image_gateway, "base_url"):
+                self._image_gateway.base_url = self._active_image_provider.base_url
+                self._image_gateway.api_key = self._active_image_provider.api_key
+                self._image_gateway.proxy_url = self._active_image_provider.proxy_url
+
         return self._active_image_provider
 
     def _resolve_output_size(self, command_size: str | None = None) -> str | None:

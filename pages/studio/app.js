@@ -120,6 +120,9 @@ function showTab(tabId) {
     renderGallery();
   } else if (tabId === "create") {
     resizePromptTextarea($("createPrompt"));
+  } else if (tabId === "settings") {
+    loadPromptOptimizerSettings();
+    loadImageModelSettings();
   }
 }
 
@@ -131,6 +134,52 @@ function resizePromptTextarea(textarea) {
 
 function resizePromptTextareas() {
   resizePromptTextarea($("createPrompt"));
+}
+
+function renderImageModelSettings(settings) {
+  const select = $("imageModelProvider");
+  const selectedId = settings.active_provider_id || "";
+  select.innerHTML = "";
+
+  const providers = Array.isArray(settings.providers) ? settings.providers : [];
+  if (!providers.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = t("noProvidersConfigured", "暂无可用供应商配置");
+    select.appendChild(opt);
+    return;
+  }
+
+  providers.forEach((prov) => {
+    const opt = document.createElement("option");
+    opt.value = prov.provider_id;
+    const modelText = prov.model || t("defaultModel", "使用 AstrBot 默认模型");
+    const nameText = prov.name || prov.provider_id;
+    opt.textContent = `${modelText} (${nameText})`;
+    select.appendChild(opt);
+  });
+
+  select.value = selectedId;
+}
+
+async function loadImageModelSettings() {
+  renderImageModelSettings(await bridge.apiGet("image-provider-settings"));
+}
+
+async function saveImageModelSettings() {
+  const button = $("saveImageModelSettingsBtn");
+  button.disabled = true;
+  try {
+    const settings = await bridge.apiPost("image-provider-settings", {
+      active_provider_id: $("imageModelProvider").value,
+    });
+    renderImageModelSettings(settings);
+    showToast(t("imageModelSaved", "图片模型设置已保存"));
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderPromptOptimizerSettings(settings) {
@@ -879,6 +928,10 @@ $("nextPageBtn").addEventListener("click", () => {
   loadGallery().catch((error) => showToast(error.message));
 });
 
+$("saveImageModelSettingsBtn").addEventListener("click", () => {
+  saveImageModelSettings();
+});
+
 $("savePromptOptimizerSettingsBtn").addEventListener("click", () => {
   savePromptOptimizerSettings();
 });
@@ -1190,7 +1243,10 @@ applyI18n();
 bridge.onContext(applyI18n);
 resizePromptTextareas();
 try {
-  await loadPromptOptimizerSettings();
+  await Promise.all([
+    loadPromptOptimizerSettings(),
+    loadImageModelSettings(),
+  ]);
   await loadGallery();
 } catch (error) {
   showToast(error.message);

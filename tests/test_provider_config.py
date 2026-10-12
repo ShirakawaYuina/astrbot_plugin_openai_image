@@ -107,27 +107,127 @@ def test_resolve_active_image_provider_rejects_missing_base_url():
         raise AssertionError("缺少可用供应商时应该抛出 ValueError")
 
 
-def test_config_schema_replaces_base_url_and_api_key_with_provider_list():
+def test_config_schema_replaces_template_list_with_json_file_reference():
     schema_path = ROOT / "_conf_schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
     assert "base_url" not in schema
     assert "api_key" not in schema
+    assert "image_providers" not in schema
     assert schema["active_provider_id"]["type"] == "string"
     assert "default" in schema["active_provider_id"]["options"]
-    assert schema["image_providers"]["type"] == "template_list"
-    assert "openai_compatible" in schema["image_providers"]["templates"]
+    assert "providers.json" in schema["active_provider_id"]["hint"]
     assert "model" not in schema
     assert "endpoint_type" not in schema
-    provider_items = schema["image_providers"]["templates"]["openai_compatible"][
-        "items"
-    ]
-    assert provider_items["proxy_url"]["type"] == "string"
-    assert "供应商" in provider_items["proxy_url"]["hint"]
-    assert provider_items["model"]["type"] == "string"
-    assert provider_items["endpoint_type"]["default"] == "responses"
-    assert provider_items["endpoint_type"]["options"] == ["responses", "images"]
     assert "image_proxy_url" not in schema
     assert "prompt_optimizer_model" not in schema
     assert "prompt_optimizer_base_url" not in schema
     assert "prompt_optimizer_api_key" not in schema
+
+
+def test_load_providers_from_file_initializes_default(tmp_path: Path):
+    module = _load_module()
+    target_file = tmp_path / "providers.json"
+    assert not target_file.exists()
+
+    providers = module.load_providers_from_file(target_file)
+    assert len(providers) == 1
+    assert providers[0].provider_id == "default"
+    assert providers[0].name == "默认供应商"
+    assert providers[0].base_url == "https://cdn.jucode.top/v1"
+    assert target_file.is_file()
+
+
+def test_load_providers_from_file_reads_custom_providers(tmp_path: Path):
+    module = _load_module()
+    target_file = tmp_path / "providers.json"
+    target_file.write_text(
+        json.dumps(
+            [
+                {
+                    "provider_id": "silicon",
+                    "name": "硅基流动",
+                    "base_url": "https://api.siliconflow.cn/v1",
+                    "api_key": "sk-123",
+                    "model": "deepseek-ai/Janus-Pro-7B",
+                    "endpoint_type": "images",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    providers = module.load_providers_from_file(target_file)
+    assert len(providers) == 1
+    assert providers[0].provider_id == "silicon"
+    assert providers[0].name == "硅基流动"
+    assert providers[0].model == "deepseek-ai/Janus-Pro-7B"
+    assert providers[0].endpoint_type == "images"
+
+
+def test_resolve_active_image_provider_reads_from_file(tmp_path: Path):
+    module = _load_module()
+    target_file = tmp_path / "providers.json"
+    target_file.write_text(
+        json.dumps(
+            [
+                {
+                    "provider_id": "first",
+                    "name": "供应商1",
+                    "base_url": "https://first.example.com/v1",
+                    "model": "model-1",
+                },
+                {
+                    "provider_id": "second",
+                    "name": "供应商2",
+                    "base_url": "https://second.example.com/v1",
+                    "model": "model-2",
+                },
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    provider = module.resolve_active_image_provider(
+        {"active_provider_id": "second"},
+        providers_path=target_file,
+    )
+    assert provider.provider_id == "second"
+    assert provider.name == "供应商2"
+    assert provider.model == "model-2"
+
+
+def test_sync_schema_provider_options():
+    module = _load_module()
+    schema = {
+        "active_provider_id": {
+            "options": ["old"],
+            "labels": ["旧供应商"],
+        }
+    }
+    providers = [
+        module.ImageProviderConfig(
+            provider_id="p1",
+            name="供应商A",
+            base_url="https://a.com",
+            api_key="",
+            proxy_url="",
+            model="m1",
+            endpoint_type="responses",
+        ),
+        module.ImageProviderConfig(
+            provider_id="p2",
+            name="供应商B",
+            base_url="https://b.com",
+            api_key="",
+            proxy_url="",
+            model="m2",
+            endpoint_type="images",
+        ),
+    ]
+
+    module.sync_schema_provider_options(schema, providers)
+    assert schema["active_provider_id"]["options"] == ["p1", "p2"]
+    assert schema["active_provider_id"]["labels"] == ["供应商A", "供应商B"]

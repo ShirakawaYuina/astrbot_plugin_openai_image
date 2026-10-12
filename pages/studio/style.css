@@ -1312,6 +1312,10 @@ textarea {
   background: var(--panel);
 }
 
+.settings-card + .settings-card {
+  margin-top: 16px;
+}
+
 .settings-form-grid {
   display: grid;
   gap: 12px;

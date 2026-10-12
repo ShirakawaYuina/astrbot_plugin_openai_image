@@ -224,7 +224,18 @@
     <section id="settingsTab" class="tab-panel hidden">
       <div class="section-head">
         <h2 data-i18n="tabSettings">设置</h2>
-        <p class="muted" data-i18n="settingsHint">管理提示词优化模型。图片供应商、尺寸和并发等参数请在插件设置页调整。</p>
+        <p class="muted" data-i18n="settingsHint">管理图片生成模型与提示词优化。更多供应商与参数配置请编辑 providers.json。</p>
+      </div>
+      <div class="settings-card">
+        <label for="imageModelProvider" data-i18n="imageModel">图片生成模型</label>
+        <div>
+          <select id="imageModelProvider" class="control">
+          </select>
+        </div>
+        <div class="settings-actions">
+          <button id="saveImageModelSettingsBtn" class="btn primary" type="button" data-i18n="saveImageModel">保存模型设置</button>
+        </div>
+        <p class="muted" data-i18n="imageModelHint">选择当前生图与图片编辑使用的模型与供应商。供应商和模型列表读取自 providers.json 配置文件。</p>
       </div>
       <div class="settings-card">
         <label for="promptOptimizerProvider" data-i18n="optimizerModel">提示词优化模型</label>

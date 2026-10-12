@@ -425,6 +425,18 @@ class ImageStudioApi:
             ["POST"],
             "保存提示词优化模型配置",
         )
+        context.register_web_api(
+            f"/{PLUGIN_NAME}/image-provider-settings",
+            self.get_image_provider_settings,
+            ["GET"],
+            "读取图片生成供应商与模型配置",
+        )
+        context.register_web_api(
+            f"/{PLUGIN_NAME}/image-provider-settings",
+            self.save_image_provider_settings,
+            ["POST"],
+            "保存当前启用的图片生成供应商与模型设置",
+        )
 
     async def list_images(self) -> Any:
         """返回筛选、排序、分页后的图库数据和对应缩略图。
@@ -725,6 +737,61 @@ class ImageStudioApi:
             provider_id or "(default)",
         )
         return await self.get_prompt_optimizer_settings()
+
+    async def get_image_provider_settings(self) -> Any:
+        """返回图片生成供应商与模型配置，供 WebUI 设置 Tab 展示。"""
+        providers = self.plugin._load_configured_providers()
+        active_provider = self.plugin._get_active_image_provider()
+        return json_response(
+            {
+                "active_provider_id": active_provider.provider_id,
+                "active_provider_name": active_provider.name,
+                "active_model": active_provider.model,
+                "providers": [
+                    {
+                        "provider_id": p.provider_id,
+                        "name": p.name,
+                        "model": p.model,
+                        "base_url": p.base_url,
+                        "endpoint_type": p.endpoint_type,
+                    }
+                    for p in providers
+                ],
+            }
+        )
+
+    async def save_image_provider_settings(self) -> Any:
+        """保存 WebUI 设置 Tab 提交的当前启用图片供应商/模型。"""
+        payload = await request.json(default={})
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象")
+
+        provider_id = str(payload.get("active_provider_id", "") or "").strip()
+        if not provider_id:
+            return error_response("未提供供应商 ID")
+
+        providers = self.plugin._load_configured_providers()
+        matching = next((p for p in providers if p.provider_id == provider_id), None)
+        if matching is None:
+            return error_response(f"未找到指定的图片供应商: {provider_id}")
+
+        self.plugin.config["active_provider_id"] = provider_id
+        if hasattr(self.plugin.config, "save_config"):
+            try:
+                self.plugin.config.save_config()
+            except Exception as exc:
+                logger.warning("[OpenAIImage] 保存配置失败: %s", exc)
+
+        self.plugin._rebuild_runtime_dependencies()
+        self.plugin._sync_schema_provider_options()
+
+        logger.info(
+            "[OpenAIImage][webui][image_provider] 已切换图片供应商 provider_id=%s name=%s model=%s",
+            matching.provider_id,
+            matching.name,
+            matching.model,
+        )
+        return await self.get_image_provider_settings()
 
     def _task_response(self, task_result: dict[str, Any]) -> Any:
         """将任务服务的统一结果转换为页面 JSON 响应。"""

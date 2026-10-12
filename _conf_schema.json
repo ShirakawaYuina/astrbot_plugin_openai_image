@@ -1,108 +1,15 @@
 {
-    "image_providers": {
-        "description": "图片接口供应商",
-        "type": "template_list",
-        "default": [
-            {
-                "__template_key": "openai_compatible",
-                "provider_id": "default",
-                "name": "默认供应商",
-                "base_url": "https://cdn.jucode.top/v1",
-                "api_key": "",
-                "proxy_url": "",
-                "model": "",
-                "endpoint_type": "responses"
-            }
-        ],
-        "hint": "可添加多个 OpenAI 兼容图片接口供应商。每个供应商独立配置 Base URL、API Key、代理、模型和端点类型；provider_id 需要与“当前启用供应商”下拉选择保持一致。",
-        "templates": {
-            "openai_compatible": {
-                "name": "OpenAI 兼容供应商",
-                "description": "适用于兼容 OpenAI Responses 或 Images API 的图片服务。",
-                "items": {
-                    "provider_id": {
-                        "description": "供应商槽位",
-                        "type": "string",
-                        "default": "default",
-                        "options": [
-                            "default",
-                            "provider_2",
-                            "provider_3",
-                            "provider_4",
-                            "provider_5"
-                        ],
-                        "labels": [
-                            "默认供应商",
-                            "供应商 2",
-                            "供应商 3",
-                            "供应商 4",
-                            "供应商 5"
-                        ],
-                        "hint": "用于和“当前启用供应商”下拉选择匹配。多个供应商请使用不同槽位。"
-                    },
-                    "name": {
-                        "description": "供应商名称",
-                        "type": "string",
-                        "default": "默认供应商",
-                        "hint": "用于日志区分不同图片接口，例如 Jucode、OpenAI、内网代理等。"
-                    },
-                    "base_url": {
-                        "description": "图片接口基础地址",
-                        "type": "string",
-                        "default": "https://cdn.jucode.top/v1",
-                        "hint": "这里只填写站点 Base URL，例如 https://cdn.jucode.top/v1。插件会按端点类型自动补全 /responses、/images/generations 或 /images/edits。"
-                    },
-                    "api_key": {
-                        "description": "图片接口 API Key",
-                        "type": "string",
-                        "default": "",
-                        "hint": "将以 Bearer Token 方式附带到图片接口请求头中。"
-                    },
-                    "proxy_url": {
-                        "description": "图片接口代理地址",
-                        "type": "string",
-                        "default": "",
-                        "hint": "仅此供应商发出图片接口请求并读取响应时生效，例如 http://127.0.0.1:7890。留空则该供应商不使用显式代理。"
-                    },
-                    "model": {
-                        "description": "图片模型名称",
-                        "type": "string",
-                        "default": "",
-                        "hint": "仅此供应商生效。留空时自动按端点类型选择默认模型：responses 使用 gpt-5.4-mini，images 使用 gpt-image-2。"
-                    },
-                    "endpoint_type": {
-                        "description": "图片接口端点类型",
-                        "type": "string",
-                        "default": "responses",
-                        "options": [
-                            "responses",
-                            "images"
-                        ],
-                        "hint": "仅此供应商生效。responses 使用 /v1/responses；images 文生图使用 /v1/images/generations，图片编辑使用 /v1/images/edits。"
-                    }
-                }
-            }
-        }
-    },
     "active_provider_id": {
         "description": "当前启用供应商",
         "type": "string",
         "default": "default",
         "options": [
-            "default",
-            "provider_2",
-            "provider_3",
-            "provider_4",
-            "provider_5"
+            "default"
         ],
         "labels": [
-            "默认供应商",
-            "供应商 2",
-            "供应商 3",
-            "供应商 4",
-            "供应商 5"
+            "默认供应商"
         ],
-        "hint": "下拉选择当前要使用的图片接口供应商。模型名称和端点类型会读取该供应商条目内的独立配置。"
+        "hint": "下拉选择当前要使用的图片接口供应商。供应商名称与模型配置请编辑 data/plugin_data/astrbot_plugin_openai_image/providers.json。"
     },
     "image_size": {
         "description": "默认输出图片尺寸",

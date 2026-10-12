@@ -168,7 +168,7 @@ async def test_initialize_registers_builtin_page_web_apis():
 
     # 完整路由清单在 test_web_api.py 中断言，这里只确认 initialize 确实完成了注册。
     assert plugin._studio_api is not None
-    assert len(registered) == 8
+    assert len(registered) == 10
     assert all(
         route.startswith("/astrbot_plugin_openai_image/") for route, _ in registered
     )
