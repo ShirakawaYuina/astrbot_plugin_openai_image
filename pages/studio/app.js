@@ -887,8 +887,14 @@ async function submitCreateTask() {
           throw new Error("服务端未返回图片信息");
         }
 
-        const img = await fetchFullImage(data.image.name);
+        const img =
+          data.image.data_url
+            ? data.image
+            : await fetchFullImage(data.image.name);
         slots[index] = img;
+        if (data.timings && typeof data.timings.total_elapsed_ms === "number") {
+          slots[index].serverElapsedMs = data.timings.total_elapsed_ms;
+        }
         completedCount += 1;
         updateHeaderTag();
 
@@ -928,7 +934,15 @@ async function submitCreateTask() {
       timerInterval = null;
     }
 
-    const finalSec = ((Date.now() - startTime) / 1000).toFixed(1);
+    let finalSec = ((Date.now() - startTime) / 1000).toFixed(1);
+    const validServerTimes = slots
+      .filter((item) => item && typeof item.serverElapsedMs === "number")
+      .map((item) => item.serverElapsedMs);
+    if (validServerTimes.length > 0) {
+      const maxServerMs = Math.max(...validServerTimes);
+      finalSec = (maxServerMs / 1000).toFixed(1);
+    }
+
     const timeBadge = $("resultTimeBadge");
     if (timeBadge) {
       timeBadge.textContent = `⏱ ${finalSec}s`;

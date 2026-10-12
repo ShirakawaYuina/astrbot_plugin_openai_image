@@ -80,7 +80,7 @@ class LocalImageGateway(OpenAIImageGateway):
         Raises:
             RuntimeError: 当健康检查超时、连接失败或状态码非 2xx 时抛出。
         """
-        headers = {}
+        headers = {"Connection": "close"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
@@ -100,6 +100,12 @@ class LocalImageGateway(OpenAIImageGateway):
                 proxy=self._proxy_url,
                 timeout=timeout,
             ) as response:
+                if hasattr(response, "read"):
+                    body_bytes = await response.read()
+                elif hasattr(response, "text"):
+                    body_bytes = (await response.text()).encode("utf-8")
+                else:
+                    body_bytes = b""
                 if 200 <= response.status < 300:
                     logger.info(
                         "[OpenAIImage][local_gateway] 本地后端健康度检查通过 status=%s",
@@ -108,7 +114,7 @@ class LocalImageGateway(OpenAIImageGateway):
                     return
 
                 try:
-                    body_text = (await response.text())[:200].strip()
+                    body_text = body_bytes[:200].decode("utf-8", errors="replace").strip()
                 except Exception:
                     body_text = ""
                 detail = f"status={response.status}"

@@ -42,6 +42,7 @@ class ImageGenerateService:
                 size=size,
                 quality=quality,
                 moderation=moderation,
+                response_format="b64_json",
             )
             response_data = await self.gateway.request_image_generation(payload)
             parser = parse_images_response

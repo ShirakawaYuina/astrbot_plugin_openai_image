@@ -146,6 +146,7 @@ async def test_generate_service_can_use_images_generations_endpoint(tmp_path: Pa
         {
             "model": "gpt-image-2",
             "prompt": "生成一只小猫",
+            "response_format": "b64_json",
             "quality": "auto",
             "moderation": "low",
         }

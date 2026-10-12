@@ -32,6 +32,7 @@ def build_images_generate_payload(
     size: str | None = None,
     quality: str = "auto",
     moderation: str = "low",
+    response_format: str | None = None,
 ) -> dict:
     """构造 Images generations 文生图请求体。"""
 
@@ -39,6 +40,8 @@ def build_images_generate_payload(
         "model": model,
         "prompt": str(prompt or "").strip(),
     }
+    if response_format:
+        payload["response_format"] = str(response_format).strip()
     _append_size_if_configured(payload, size)
     _append_image_options(payload, quality=quality, moderation=moderation)
     return payload

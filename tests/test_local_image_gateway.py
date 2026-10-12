@@ -74,6 +74,9 @@ class _FakeResponse:
     async def text(self) -> str:
         return self._text
 
+    async def read(self) -> bytes:
+        return self._text.encode("utf-8")
+
     async def json(self) -> dict:
         return self._json_data
 
