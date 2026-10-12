@@ -181,6 +181,8 @@ def test_register_declares_expected_routes(tmp_path: Path):
         (f"/{module.PLUGIN_NAME}/prompt-optimizer-settings", ["POST"]),
         (f"/{module.PLUGIN_NAME}/image-provider-settings", ["GET"]),
         (f"/{module.PLUGIN_NAME}/image-provider-settings", ["POST"]),
+        (f"/{module.PLUGIN_NAME}/providers-json", ["GET"]),
+        (f"/{module.PLUGIN_NAME}/providers-json", ["POST"]),
     ]
 
 
@@ -572,6 +574,58 @@ async def test_image_provider_settings_round_trip(tmp_path: Path):
     with _bind_request(body={"active_provider_id": "nonexistent"}):
         err = _read_json(await api.save_image_provider_settings())
     assert "未找到指定的图片供应商" in err["message"]
+
+
+@pytest.mark.asyncio
+async def test_providers_json_round_trip(tmp_path: Path):
+    from astrbot_plugin_openai_image.core.provider_config import (
+        ImageProviderConfig,
+        load_providers_from_file,
+    )
+    import astrbot_plugin_openai_image.core.provider_config as pc
+
+    test_providers_file = tmp_path / "providers.json"
+    orig_path_fn = pc.get_default_providers_path
+    pc.get_default_providers_path = lambda: test_providers_file
+
+    try:
+        fake_plugin = SimpleNamespace(
+            config={"active_provider_id": "default"},
+            _load_configured_providers=lambda: load_providers_from_file(test_providers_file),
+            _get_active_image_provider=lambda: fake_plugin._load_configured_providers()[0],
+            _rebuild_runtime_dependencies=lambda: None,
+            _sync_schema_provider_options=lambda: None,
+        )
+        api, _cache_dir = _build_studio_api(tmp_path, plugin=fake_plugin)
+
+        with _bind_request():
+            res = _read_json(await api.get_providers_json())
+        assert "providers.json" in res["path"]
+        assert "default" in res["content"]
+
+        new_content = json.dumps(
+            [
+                {
+                    "provider_id": "new_p",
+                    "name": "新供应商",
+                    "base_url": "https://new.com/v1",
+                    "model": "flux",
+                }
+            ],
+            ensure_ascii=False,
+            indent=2,
+        )
+        with _bind_request(body={"content": new_content}):
+            saved = _read_json(await api.save_providers_json())
+        assert saved["active_provider_id"] == "new_p"
+        assert len(saved["providers"]) == 1
+        assert saved["providers"][0]["model"] == "flux"
+
+        with _bind_request(body={"content": "{bad json"}):
+            err = _read_json(await api.save_providers_json())
+        assert "JSON 格式解析失败" in err["message"]
+    finally:
+        pc.get_default_providers_path = orig_path_fn
 
 
 def test_prompt_optimizer_settings_store_saves_provider_id(tmp_path: Path):

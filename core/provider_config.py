@@ -130,6 +130,67 @@ def save_providers_to_file(
     path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def read_raw_providers_json(providers_path: Path | None = None) -> str:
+    """读取 providers.json 的原始 JSON 文本内容。若文件不存在则初始化。
+
+    Args:
+        providers_path: 可选的自定义文件路径。
+
+    Returns:
+        JSON 格式字符串。
+    """
+    path = providers_path or get_default_providers_path()
+    if not path.is_file():
+        load_providers_from_file(path)
+    return path.read_text(encoding="utf-8")
+
+
+def write_raw_providers_json(
+    content: str,
+    providers_path: Path | None = None,
+) -> list[ImageProviderConfig]:
+    """校验并写入原始 JSON 文本到 providers.json。
+
+    Args:
+        content: 用户提交的 JSON 文本字符串。
+        providers_path: 可选的自定义文件路径。
+
+    Returns:
+        解析出的有效 ImageProviderConfig 列表。
+
+    Raises:
+        ValueError: 当 JSON 格式错误或未包含有效供应商时抛出。
+    """
+    try:
+        data = json.loads(content)
+    except Exception as exc:
+        raise ValueError(f"JSON 格式解析失败: {exc}") from exc
+
+    if isinstance(data, dict):
+        raw_list = data.get("providers", list(data.values()))
+    elif isinstance(data, list):
+        raw_list = data
+    else:
+        raise ValueError("providers.json 顶层必须是数组或包含 providers 的对象")
+
+    if not isinstance(raw_list, list):
+        raise ValueError("供应商配置列表必须是数组")
+
+    normalized: list[ImageProviderConfig] = []
+    for item in raw_list:
+        p = _normalize_provider_payload(item)
+        if p is not None:
+            normalized.append(p)
+
+    if not normalized:
+        raise ValueError("至少需要包含一个填写了有效 base_url 的供应商")
+
+    path = providers_path or get_default_providers_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return normalized
+
+
 def sync_schema_provider_options(
     schema: dict[str, Any] | None,
     providers: list[ImageProviderConfig],

@@ -1332,6 +1332,49 @@ textarea {
   gap: 10px;
 }
 
+.providers-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.providers-editor-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.providers-editor-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.providers-editor-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.code-editor {
+  width: 100%;
+  min-height: 240px;
+  max-height: 480px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+  overflow: auto;
+  resize: vertical;
+  background: var(--bg);
+}
+
 .settings-card p {
   font-size: 12px;
 }

@@ -234,8 +234,23 @@
         </div>
         <div class="settings-actions">
           <button id="saveImageModelSettingsBtn" class="btn primary" type="button" data-i18n="saveImageModel">保存模型设置</button>
+          <button id="toggleProvidersEditorBtn" class="btn" type="button" data-i18n="editProvidersJson">编辑配置文件 (JSON)</button>
         </div>
         <p class="muted" data-i18n="imageModelHint">选择当前生图与图片编辑使用的模型与供应商。供应商和模型列表读取自 providers.json 配置文件。</p>
+
+        <div id="providersEditorContainer" class="providers-editor hidden">
+          <div class="providers-editor-head">
+            <span class="providers-editor-title" data-i18n="providersJsonTitle">编辑 providers.json</span>
+            <span class="muted providers-editor-path">data/plugin_data/astrbot_plugin_openai_image/providers.json</span>
+          </div>
+          <textarea id="providersJsonTextarea" class="control code-editor" spellcheck="false" rows="14"></textarea>
+          <div class="settings-actions">
+            <button id="saveProvidersJsonBtn" class="btn primary" type="button" data-i18n="saveProvidersJson">保存配置文件</button>
+            <button id="formatProvidersJsonBtn" class="btn" type="button" data-i18n="formatJson">格式化 JSON</button>
+            <button id="closeProvidersEditorBtn" class="btn" type="button" data-i18n="closeEditor">收起</button>
+          </div>
+          <p class="muted" data-i18n="providersJsonEditorHint">保存后将直接更新本地 providers.json 配置文件，并实时重载可用供应商与模型列表。</p>
+        </div>
       </div>
       <div class="settings-card">
         <label for="promptOptimizerProvider" data-i18n="optimizerModel">提示词优化模型</label>

@@ -182,6 +182,71 @@ async function saveImageModelSettings() {
   }
 }
 
+async function loadProvidersJson() {
+  const data = await bridge.apiGet("providers-json");
+  $("providersJsonTextarea").value = data.content || "";
+}
+
+async function toggleProvidersEditor(forceShow) {
+  const container = $("providersEditorContainer");
+  const isCurrentlyHidden = container.classList.contains("hidden");
+  const shouldShow =
+    typeof forceShow === "boolean" ? forceShow : isCurrentlyHidden;
+
+  if (shouldShow) {
+    container.classList.remove("hidden");
+    if (!$("providersJsonTextarea").value.trim()) {
+      await loadProvidersJson();
+    }
+  } else {
+    container.classList.add("hidden");
+  }
+}
+
+async function saveProvidersJson() {
+  const button = $("saveProvidersJsonBtn");
+  const textarea = $("providersJsonTextarea");
+  const rawContent = textarea.value.trim();
+
+  if (!rawContent) {
+    showToast(t("emptyJsonError", "配置文件内容不能为空"));
+    return;
+  }
+
+  try {
+    JSON.parse(rawContent);
+  } catch (err) {
+    showToast(t("invalidJsonError", "JSON 格式错误，请检查语法"));
+    return;
+  }
+
+  button.disabled = true;
+  try {
+    const updatedSettings = await bridge.apiPost("providers-json", {
+      content: rawContent,
+    });
+    renderImageModelSettings(updatedSettings);
+    showToast(t("providersJsonSaved", "供应商配置文件已保存"));
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function formatProvidersJson() {
+  const textarea = $("providersJsonTextarea");
+  const raw = textarea.value.trim();
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    textarea.value = JSON.stringify(parsed, null, 2);
+    showToast(t("jsonFormatted", "JSON 已格式化"));
+  } catch (err) {
+    showToast(t("invalidJsonError", "JSON 格式错误，请检查语法"));
+  }
+}
+
 function renderPromptOptimizerSettings(settings) {
   const select = $("promptOptimizerProvider");
   const selectedId = settings.provider_id || "";
@@ -930,6 +995,22 @@ $("nextPageBtn").addEventListener("click", () => {
 
 $("saveImageModelSettingsBtn").addEventListener("click", () => {
   saveImageModelSettings();
+});
+
+$("toggleProvidersEditorBtn").addEventListener("click", () => {
+  toggleProvidersEditor();
+});
+
+$("closeProvidersEditorBtn").addEventListener("click", () => {
+  toggleProvidersEditor(false);
+});
+
+$("formatProvidersJsonBtn").addEventListener("click", () => {
+  formatProvidersJson();
+});
+
+$("saveProvidersJsonBtn").addEventListener("click", () => {
+  saveProvidersJson();
 });
 
 $("savePromptOptimizerSettingsBtn").addEventListener("click", () => {

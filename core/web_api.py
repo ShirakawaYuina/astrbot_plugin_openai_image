@@ -14,6 +14,10 @@ from astrbot.api import logger
 from astrbot.api.web import error_response, json_response, request
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
+from .provider_config import (
+    read_raw_providers_json,
+    write_raw_providers_json,
+)
 from .storage.cache_cleaner import IMAGE_SUFFIXES
 from .storage.thumbnail_store import ThumbnailStore
 
@@ -437,6 +441,18 @@ class ImageStudioApi:
             ["POST"],
             "保存当前启用的图片生成供应商与模型设置",
         )
+        context.register_web_api(
+            f"/{PLUGIN_NAME}/providers-json",
+            self.get_providers_json,
+            ["GET"],
+            "读取 providers.json 原始文本配置",
+        )
+        context.register_web_api(
+            f"/{PLUGIN_NAME}/providers-json",
+            self.save_providers_json,
+            ["POST"],
+            "保存并更新 providers.json 原始文本配置",
+        )
 
     async def list_images(self) -> Any:
         """返回筛选、排序、分页后的图库数据和对应缩略图。
@@ -790,6 +806,52 @@ class ImageStudioApi:
             matching.provider_id,
             matching.name,
             matching.model,
+        )
+        return await self.get_image_provider_settings()
+
+    async def get_providers_json(self) -> Any:
+        """返回 providers.json 的原始文本内容。"""
+        content = read_raw_providers_json()
+        return json_response(
+            {
+                "path": "data/plugin_data/astrbot_plugin_openai_image/providers.json",
+                "content": content,
+            }
+        )
+
+    async def save_providers_json(self) -> Any:
+        """接收前端提交的 providers.json 文本并校验保存。"""
+        payload = await request.json(default={})
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象")
+
+        content = str(payload.get("content", "") or "").strip()
+        if not content:
+            return error_response("配置文件内容不能为空")
+
+        try:
+            normalized_providers = write_raw_providers_json(content)
+        except ValueError as exc:
+            return error_response(str(exc))
+
+        current_active_id = str(
+            self.plugin.config.get("active_provider_id", "") or ""
+        ).strip()
+        if not any(p.provider_id == current_active_id for p in normalized_providers):
+            fallback_id = normalized_providers[0].provider_id
+            self.plugin.config["active_provider_id"] = fallback_id
+            if hasattr(self.plugin.config, "save_config"):
+                try:
+                    self.plugin.config.save_config()
+                except Exception as exc:
+                    logger.warning("[OpenAIImage] 保存配置失败: %s", exc)
+
+        self.plugin._rebuild_runtime_dependencies()
+        self.plugin._sync_schema_provider_options()
+
+        logger.info(
+            "[OpenAIImage][webui][providers_json] 已更新 providers.json，供应商数=%s",
+            len(normalized_providers),
         )
         return await self.get_image_provider_settings()
 
