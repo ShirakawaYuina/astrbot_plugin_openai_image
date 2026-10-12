@@ -56,7 +56,7 @@ class OpenAIImagePlugin(Star):
 
     def __init__(self, context: Context, config: dict[str, Any] | None = None) -> None:
         super().__init__(context)
-        self.config = dict(config or {})
+        self.config = config if config is not None else {}
         self.presenter = ResultPresenter()
         self._image_gateway: OpenAIImageGateway | None = None
         self._cache_store: ImageCacheStore | None = None

@@ -792,6 +792,7 @@ class ImageStudioApi:
             return error_response(f"未找到指定的图片供应商: {provider_id}")
 
         self.plugin.config["active_provider_id"] = provider_id
+        self.plugin.config.pop("image_providers", None)
         if hasattr(self.plugin.config, "save_config"):
             try:
                 self.plugin.config.save_config()

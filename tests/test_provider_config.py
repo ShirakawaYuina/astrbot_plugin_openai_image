@@ -231,3 +231,100 @@ def test_sync_schema_provider_options():
     module.sync_schema_provider_options(schema, providers)
     assert schema["active_provider_id"]["options"] == ["p1", "p2"]
     assert schema["active_provider_id"]["labels"] == ["供应商A", "供应商B"]
+
+
+def test_normalize_providers_list_deduplicates_and_assigns_unique_ids():
+    module = _load_module()
+    raw = [
+        {
+            "name": "jucode",
+            "base_url": "https://cdn.jucode.top/v1",
+            "model": "gpt-image-2",
+        },
+        {
+            "name": "jucode",
+            "base_url": "https://cdn.jucode.top/v1",
+            "model": "gpt-image-2.5-sunburst",
+        },
+        {
+            "name": "jucode",
+            "base_url": "https://cdn.jucode.top/v1",
+            "model": "gpt-image-2.5-sunburst",
+        },
+    ]
+
+    providers, has_changes = module.normalize_providers_list(raw)
+    assert has_changes is True
+    assert len(providers) == 3
+    assert providers[0].provider_id == "default"
+    assert providers[1].provider_id == "jucode_gpt-image-2.5-sunburst"
+    assert providers[2].provider_id == "jucode_gpt-image-2.5-sunburst_2"
+    assert len({p.provider_id for p in providers}) == 3
+
+
+def test_load_providers_from_file_auto_heals_duplicate_ids(tmp_path: Path):
+    module = _load_module()
+    target_file = tmp_path / "providers.json"
+    target_file.write_text(
+        json.dumps(
+            [
+                {
+                    "provider_id": "default",
+                    "name": "jucode",
+                    "base_url": "https://cdn.jucode.top/v1",
+                    "model": "gpt-image-2",
+                },
+                {
+                    "provider_id": "default",
+                    "name": "jucode",
+                    "base_url": "https://cdn.jucode.top/v1",
+                    "model": "gpt-image-2.5-sunburst",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    providers = module.load_providers_from_file(target_file)
+    assert len(providers) == 2
+    assert providers[0].provider_id == "default"
+    assert providers[1].provider_id == "jucode_gpt-image-2.5-sunburst"
+
+    saved_data = json.loads(target_file.read_text(encoding="utf-8"))
+    assert saved_data[0]["provider_id"] == "default"
+    assert saved_data[1]["provider_id"] == "jucode_gpt-image-2.5-sunburst"
+
+    # 验证能精准根据第二个 provider_id 激活第二个模型
+    active = module.resolve_active_image_provider(
+        {"active_provider_id": "jucode_gpt-image-2.5-sunburst"},
+        providers_path=target_file,
+    )
+    assert active.model == "gpt-image-2.5-sunburst"
+
+
+def test_write_raw_providers_json_deduplicates_ids(tmp_path: Path):
+    module = _load_module()
+    target_file = tmp_path / "providers.json"
+    raw_content = json.dumps(
+        [
+            {
+                "name": "my_api",
+                "base_url": "https://api.example.com/v1",
+                "model": "model-a",
+            },
+            {
+                "name": "my_api",
+                "base_url": "https://api.example.com/v1",
+                "model": "model-b",
+            },
+        ]
+    )
+
+    providers = module.write_raw_providers_json(raw_content, target_file)
+    assert len(providers) == 2
+    assert providers[0].provider_id == "default"
+    assert providers[1].provider_id == "my_api_model-b"
+
+    disk_data = json.loads(target_file.read_text(encoding="utf-8"))
+    assert disk_data[1]["provider_id"] == "my_api_model-b"
+

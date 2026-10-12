@@ -226,6 +226,7 @@ async function saveProvidersJson() {
       content: rawContent,
     });
     renderImageModelSettings(updatedSettings);
+    await loadProvidersJson();
     showToast(t("providersJsonSaved", "供应商配置文件已保存"));
   } catch (error) {
     showToast(error.message);

@@ -70,6 +70,93 @@ def build_default_provider_payload() -> list[dict[str, Any]]:
     ]
 
 
+import re
+
+def _slugify(text: str) -> str:
+    """清理字符串为合法的 ASCII 标识符片段。"""
+    cleaned = re.sub(r"[^a-zA-Z0-9_\-\.]+", "_", text.strip().lower()).strip("_")
+    return cleaned or "item"
+
+
+def normalize_providers_list(
+    raw_list: list[Any],
+) -> tuple[list[ImageProviderConfig], bool]:
+    """标准化供应商列表并确保每个条目的 provider_id 全局唯一。
+
+    Args:
+        raw_list: 包含供应商字典的原始列表。
+
+    Returns:
+        元组 (解析并规范化后的 ImageProviderConfig 列表, 原始 provider_id 是否发生过修正或补全)。
+    """
+    seen_ids: set[str] = set()
+    normalized: list[ImageProviderConfig] = []
+    has_changes = False
+
+    for item in raw_list:
+        if not isinstance(item, dict):
+            continue
+
+        base_url = str(item.get("base_url", "") or "").strip().rstrip("/")
+        if not base_url:
+            continue
+
+        endpoint_type = _normalize_endpoint_type(item.get("endpoint_type"))
+        model = str(item.get("model", "") or "").strip() or _resolve_default_model(
+            endpoint_type
+        )
+        name = str(item.get("name", "") or "").strip() or DEFAULT_PROVIDER_NAME
+        api_key = str(item.get("api_key", "") or "").strip()
+        proxy_url = str(item.get("proxy_url", "") or "").strip()
+
+        raw_id = str(item.get("provider_id", "") or "").strip()
+
+        # 生成候选 provider_id
+        if raw_id and raw_id != DEFAULT_PROVIDER_ID:
+            candidate_id = _slugify(raw_id)
+        elif not seen_ids and (not raw_id or raw_id == DEFAULT_PROVIDER_ID):
+            # 第一个条目未指定或显式指定 default 时，优先沿用 "default" 以保持向下兼容
+            candidate_id = DEFAULT_PROVIDER_ID
+        else:
+            # 其它情况根据供应商名称与模型名称自动构建具名标识
+            name_slug = _slugify(name)
+            model_slug = _slugify(model)
+            if name_slug and name_slug != _slugify(DEFAULT_PROVIDER_NAME):
+                candidate_id = f"{name_slug}_{model_slug}"
+            else:
+                candidate_id = model_slug
+
+        # 确保 candidate_id 全局唯一，避免前端 select 出现重复 value 导致选项回退
+        final_id = candidate_id
+        if final_id in seen_ids:
+            model_slug = _slugify(model)
+            if model_slug not in final_id:
+                final_id = f"{final_id}_{model_slug}"
+            counter = 2
+            base = final_id
+            while final_id in seen_ids:
+                final_id = f"{base}_{counter}"
+                counter += 1
+
+        seen_ids.add(final_id)
+        if final_id != raw_id:
+            has_changes = True
+
+        normalized.append(
+            ImageProviderConfig(
+                provider_id=final_id,
+                name=name,
+                base_url=base_url,
+                api_key=api_key,
+                proxy_url=proxy_url,
+                model=model,
+                endpoint_type=endpoint_type,
+            )
+        )
+
+    return normalized, has_changes
+
+
 def load_providers_from_file(
     providers_path: Path | None = None,
     legacy_providers: list[Any] | None = None,
@@ -103,11 +190,16 @@ def load_providers_from_file(
     if not isinstance(data, list):
         return []
 
-    providers: list[ImageProviderConfig] = []
-    for item in data:
-        normalized = _normalize_provider_payload(item)
-        if normalized is not None:
-            providers.append(normalized)
+    providers, has_changes = normalize_providers_list(data)
+    if has_changes and providers:
+        try:
+            save_providers_to_file(providers, path)
+            logger.info(
+                "[OpenAIImage] 已对 providers.json 中缺失或重复的 provider_id 完成唯一化持久化"
+            )
+        except Exception as exc:
+            logger.warning("[OpenAIImage] 自动持久化更新 providers.json 失败: %s", exc)
+
     return providers
 
 
@@ -176,18 +268,12 @@ def write_raw_providers_json(
     if not isinstance(raw_list, list):
         raise ValueError("供应商配置列表必须是数组")
 
-    normalized: list[ImageProviderConfig] = []
-    for item in raw_list:
-        p = _normalize_provider_payload(item)
-        if p is not None:
-            normalized.append(p)
-
+    normalized, _ = normalize_providers_list(raw_list)
     if not normalized:
         raise ValueError("至少需要包含一个填写了有效 base_url 的供应商")
 
     path = providers_path or get_default_providers_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    save_providers_to_file(normalized, path)
     return normalized
 
 
@@ -215,9 +301,9 @@ def resolve_active_image_provider(
 ) -> ImageProviderConfig:
     """从供应商列表中解析当前启用的图片接口供应商。
 
-    运行时优先使用 providers.json 里的供应商条目，若 config 显式传入了
-    image_providers 且为非空列表，则以传入项优先以保持兼容。并通过 active_provider_id
-    选择当前启用项。若选择的槽位不存在，抛错提示用户。
+    若指定了 providers_path 则直接从该文件读取。未指定时优先检查 config 中的
+    image_providers（保持单测隔离与兼容）；若均未指定则读取持久化的 providers.json。
+    通过 active_provider_id 选择当前启用项。若选择的槽位不存在，抛错提示用户。
 
     Args:
         config: 插件全局配置字典。
@@ -233,22 +319,19 @@ def resolve_active_image_provider(
         config.get(ACTIVE_PROVIDER_ID_CONFIG_KEY, DEFAULT_PROVIDER_ID) or ""
     ).strip()
 
-    if IMAGE_PROVIDERS_CONFIG_KEY in config and isinstance(
+    if providers_path is not None:
+        providers = load_providers_from_file(providers_path)
+    elif IMAGE_PROVIDERS_CONFIG_KEY in config and isinstance(
         config[IMAGE_PROVIDERS_CONFIG_KEY], list
     ):
-        configured_providers = config[IMAGE_PROVIDERS_CONFIG_KEY]
-        providers = [
-            p
-            for p in (_normalize_provider_payload(item) for item in configured_providers)
-            if p is not None
-        ]
+        providers, _ = normalize_providers_list(config[IMAGE_PROVIDERS_CONFIG_KEY])
     else:
         legacy = (
             config.get(IMAGE_PROVIDERS_CONFIG_KEY)
             if isinstance(config.get(IMAGE_PROVIDERS_CONFIG_KEY), list)
             else None
         )
-        providers = load_providers_from_file(providers_path, legacy_providers=legacy)
+        providers = load_providers_from_file(None, legacy_providers=legacy)
 
     if not providers:
         raise ValueError("至少启用一个图片供应商，并填写图片接口基础地址")
@@ -281,30 +364,8 @@ def _normalize_provider_payload(payload: Any) -> ImageProviderConfig | None:
     """
     if not isinstance(payload, dict):
         return None
-
-    base_url = str(payload.get("base_url", "") or "").strip().rstrip("/")
-    if not base_url:
-        return None
-
-    provider_id = (
-        str(payload.get("provider_id", "") or "").strip() or DEFAULT_PROVIDER_ID
-    )
-    name = str(payload.get("name", "") or "").strip() or DEFAULT_PROVIDER_NAME
-    api_key = str(payload.get("api_key", "") or "").strip()
-    proxy_url = str(payload.get("proxy_url", "") or "").strip()
-    endpoint_type = _normalize_endpoint_type(payload.get("endpoint_type"))
-    model = str(payload.get("model", "") or "").strip() or _resolve_default_model(
-        endpoint_type
-    )
-    return ImageProviderConfig(
-        provider_id=provider_id,
-        name=name,
-        base_url=base_url,
-        api_key=api_key,
-        proxy_url=proxy_url,
-        model=model,
-        endpoint_type=endpoint_type,
-    )
+    providers, _ = normalize_providers_list([payload])
+    return providers[0] if providers else None
 
 
 def _normalize_endpoint_type(value: Any) -> str:
