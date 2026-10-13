@@ -14,6 +14,12 @@ class ImageTaskService:
     def __init__(self, max_concurrency: int) -> None:
         self.max_concurrency = max(1, int(max_concurrency))
         self._semaphore = asyncio.Semaphore(self.max_concurrency)
+        self._active_tasks: int = 0
+
+    @property
+    def active_tasks(self) -> int:
+        """返回当前进行中（排队与执行中）的任务数量。"""
+        return self._active_tasks
 
     async def run_task(
         self,
@@ -26,30 +32,34 @@ class ImageTaskService:
         task_start_time = time.perf_counter()
         wait_start_time = task_start_time
 
-        async with self._semaphore:
-            queue_wait_ms = int((time.perf_counter() - wait_start_time) * 1000)
-            try:
-                payload = await job_coro()
-            except Exception as exc:  # noqa: BLE001
+        self._active_tasks += 1
+        try:
+            async with self._semaphore:
+                queue_wait_ms = int((time.perf_counter() - wait_start_time) * 1000)
+                try:
+                    payload = await job_coro()
+                except Exception as exc:  # noqa: BLE001
+                    total_elapsed_ms = int((time.perf_counter() - task_start_time) * 1000)
+                    return {
+                        "success": False,
+                        "mode": mode,
+                        "error_stage": stage_name,
+                        "error_message": str(exc),
+                        "timings": {
+                            "queue_wait_ms": queue_wait_ms,
+                            "total_elapsed_ms": total_elapsed_ms,
+                        },
+                    }
+
                 total_elapsed_ms = int((time.perf_counter() - task_start_time) * 1000)
                 return {
-                    "success": False,
+                    "success": True,
                     "mode": mode,
-                    "error_stage": stage_name,
-                    "error_message": str(exc),
+                    "payload": payload,
                     "timings": {
                         "queue_wait_ms": queue_wait_ms,
                         "total_elapsed_ms": total_elapsed_ms,
                     },
                 }
-
-            total_elapsed_ms = int((time.perf_counter() - task_start_time) * 1000)
-            return {
-                "success": True,
-                "mode": mode,
-                "payload": payload,
-                "timings": {
-                    "queue_wait_ms": queue_wait_ms,
-                    "total_elapsed_ms": total_elapsed_ms,
-                },
-            }
+        finally:
+            self._active_tasks -= 1

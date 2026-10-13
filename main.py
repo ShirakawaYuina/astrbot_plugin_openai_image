@@ -301,9 +301,13 @@ class OpenAIImagePlugin(Star):
             await event.send(event.plain_result(f"参数错误：{exc}"))
             return
 
+        active_count = (
+            getattr(self._task_service, "active_tasks", 0) + parsed_command.count
+        )
         await self._send_pending_message(
             event,
             prompt=parsed_command.prompt,
+            active_count=active_count,
         )
         await self._execute_generate_flow(
             event=event,
@@ -328,6 +332,10 @@ class OpenAIImagePlugin(Star):
             await event.send(event.plain_result(f"参数错误：{exc}"))
             return
 
+        active_count = (
+            getattr(self._task_service, "active_tasks", 0) + parsed_command.count
+        )
+
         if extract_first_image_component(event) is None:
             await self._execute_edit_flow(
                 event=event,
@@ -344,11 +352,15 @@ class OpenAIImagePlugin(Star):
             event.get_platform_name() == "aiocqhttp"
             and extract_first_image_component(event) is not None
         ):
-            yield self._build_edit_pending_result(parsed_command.prompt)
+            yield self._build_edit_pending_result(
+                parsed_command.prompt,
+                active_count=active_count,
+            )
         else:
             await self._send_pending_message(
                 event,
                 prompt=parsed_command.prompt,
+                active_count=active_count,
             )
 
         await self._execute_edit_flow(
@@ -381,9 +393,13 @@ class OpenAIImagePlugin(Star):
             )
             return
 
+        active_count = (
+            getattr(self._task_service, "active_tasks", 0) + parsed_command.count
+        )
         await self._send_pending_message(
             event,
             prompt=parsed_command.prompt,
+            active_count=active_count,
         )
         await self._execute_avatar_edit_flow(
             event=event,
@@ -823,9 +839,18 @@ class OpenAIImagePlugin(Star):
             return
 
         image_path = Path(str(result["payload"]))
+        timings = result.get("timings", {})
+        total_elapsed_ms = timings.get("total_elapsed_ms")
+        text_prefix = (
+            self._format_elapsed_text(total_elapsed_ms)
+            if total_elapsed_ms is not None
+            else ""
+        )
         send_start = time.perf_counter()
         try:
-            await self.presenter.send_images(event, [image_path])
+            await self.presenter.send_images(
+                event, [image_path], text_prefix=text_prefix
+            )
         except Exception as exc:  # noqa: BLE001
             send_elapsed_ms = int((time.perf_counter() - send_start) * 1000)
             logger.error(
@@ -896,8 +921,12 @@ class OpenAIImagePlugin(Star):
 
         if not results_already_sent:
             send_start = time.perf_counter()
+            total_elapsed_ms = int((time.perf_counter() - command_start) * 1000)
+            text_prefix = self._format_elapsed_text(total_elapsed_ms)
             try:
-                await self.presenter.send_images(event, success_paths)
+                await self.presenter.send_images(
+                    event, success_paths, text_prefix=text_prefix
+                )
             except Exception as exc:  # noqa: BLE001
                 send_elapsed_ms = int((time.perf_counter() - send_start) * 1000)
                 logger.error(
@@ -1358,26 +1387,48 @@ class OpenAIImagePlugin(Star):
             return text
         return f"{text[: limit - 3].rstrip()}..."
 
-    def _build_edit_pending_result(self, prompt: str):
+    @staticmethod
+    def _format_elapsed_text(elapsed_ms: int | float | None) -> str:
+        """格式化单张图片的生成耗时文本。"""
+
+        if elapsed_ms is None:
+            return ""
+        seconds = max(0.0, float(elapsed_ms) / 1000)
+        return f"生成耗时：{seconds:.1f} 秒"
+
+    def _build_edit_pending_result(
+        self, prompt: str, active_count: int | None = None
+    ):
         """构造编辑命令的处理中提示，优先走命令结果链以兼容 OneBot11。"""
 
-        return MessageEventResult().message(self._build_pending_message(prompt))
+        return MessageEventResult().message(
+            self._build_pending_message(prompt, active_count=active_count)
+        )
 
     async def _send_pending_message(
         self,
         event: AstrMessageEvent,
         *,
         prompt: str,
+        active_count: int | None = None,
     ) -> None:
         """在耗时图片任务开始前发送用户可见提示，避免命令长时间静默。"""
 
-        await event.send(event.plain_result(self._build_pending_message(prompt)))
+        await event.send(
+            event.plain_result(
+                self._build_pending_message(prompt, active_count=active_count)
+            )
+        )
 
-    def _build_pending_message(self, prompt: str) -> str:
+    def _build_pending_message(
+        self, prompt: str, active_count: int | None = None
+    ) -> str:
         """生成统一的处理中提示文本。"""
 
+        truncated = self._truncate_text(prompt, limit=60)
+        count_display = 1 if active_count is None else max(1, int(active_count))
         return (
-            f'收到请求，prompt="{self._truncate_text(prompt, limit=60)}"，正在生成中...'
+            f'收到请求，prompt="{truncated}"，正在生成中... 当前有 {count_display} 个生图任务在进行。'
         )
 
     @staticmethod

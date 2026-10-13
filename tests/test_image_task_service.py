@@ -48,3 +48,30 @@ async def test_task_service_records_failed_stage_name():
     assert result["mode"] == "edit"
     assert result["error_stage"] == "request"
     assert "boom" in result["error_message"]
+
+
+@pytest.mark.asyncio
+async def test_task_service_tracks_active_tasks():
+    import asyncio
+
+    module = _load_module()
+
+    service = module.ImageTaskService(max_concurrency=2)
+    assert service.active_tasks == 0
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_job():
+        started.set()
+        await release.wait()
+        return "done"
+
+    task = asyncio.create_task(service.run_task(mode="generate", job_coro=fake_job))
+    await started.wait()
+    assert service.active_tasks == 1
+
+    release.set()
+    await task
+    assert service.active_tasks == 0
+

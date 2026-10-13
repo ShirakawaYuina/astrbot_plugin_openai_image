@@ -325,7 +325,7 @@ async def test_edit_command_keeps_parameters_in_prompt_for_non_bot_admin():
     )
 
     assert len(results) == 1
-    assert results[0].chain[0].text == '收到请求，prompt="2 --size square -q medium -m auto 改成统一心理学海报"，正在生成中...'
+    assert results[0].chain[0].text == '收到请求，prompt="2 --size square -q medium -m auto 改成统一心理学海报"，正在生成中... 当前有 1 个生图任务在进行。'
     plugin._execute_edit_flow.assert_awaited_once()
     call_kwargs = plugin._execute_edit_flow.await_args.kwargs
     assert call_kwargs["count"] == 1
@@ -350,7 +350,7 @@ async def test_generate_command_sends_pending_message_before_execute_flow():
     await plugin._handle_generate_command(event, raw_prompt="生成一只猫")
 
     event.send.assert_awaited_once()
-    assert event._sent_messages[0] == '收到请求，prompt="生成一只猫"，正在生成中...'
+    assert event._sent_messages[0] == '收到请求，prompt="生成一只猫"，正在生成中... 当前有 1 个生图任务在进行。'
     plugin._execute_generate_flow.assert_awaited_once()
 
 
@@ -410,7 +410,7 @@ async def test_edit_command_sends_pending_message_before_execute_flow():
     )
 
     assert len(results) == 1
-    assert results[0].chain[0].text == '收到请求，prompt="真人化图像"，正在生成中...'
+    assert results[0].chain[0].text == '收到请求，prompt="真人化图像"，正在生成中... 当前有 1 个生图任务在进行。'
     plugin._execute_edit_flow.assert_awaited_once()
 
 
@@ -1199,5 +1199,63 @@ async def test_edit_command_sends_pending_message_for_reply_image():
 
     assert results == []
     event.send.assert_awaited_once()
-    assert event._sent_messages[0] == '收到请求，prompt="改成水彩风格"，正在生成中...'
+    assert event._sent_messages[0] == '收到请求，prompt="改成水彩风格"，正在生成中... 当前有 1 个生图任务在进行。'
     plugin._execute_edit_flow.assert_awaited_once()
+
+
+def test_format_elapsed_text():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+
+    assert plugin._format_elapsed_text(None) == ""
+    assert plugin._format_elapsed_text(0) == "生成耗时：0.0 秒"
+    assert plugin._format_elapsed_text(1234) == "生成耗时：1.2 秒"
+    assert plugin._format_elapsed_text(5890) == "生成耗时：5.9 秒"
+
+
+def test_build_pending_message_with_task_counts():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+
+    msg1 = plugin._build_pending_message("测试提示词", active_count=1)
+    assert msg1 == '收到请求，prompt="测试提示词"，正在生成中... 当前有 1 个生图任务在进行。'
+
+    msg2 = plugin._build_pending_message("测试提示词", active_count=3)
+    assert msg2 == '收到请求，prompt="测试提示词"，正在生成中... 当前有 3 个生图任务在进行。'
+
+    msg_none = plugin._build_pending_message("测试提示词", active_count=None)
+    assert msg_none == '收到请求，prompt="测试提示词"，正在生成中... 当前有 1 个生图任务在进行。'
+
+
+@pytest.mark.asyncio
+async def test_send_single_success_result_passes_text_prefix_with_elapsed_time(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    plugin.presenter = SimpleNamespace(send_images=AsyncMock())
+
+    image_path = tmp_path / "result.png"
+    image_path.write_bytes(b"data")
+
+    event = _make_event()
+    result = {
+        "success": True,
+        "payload": str(image_path),
+        "timings": {
+            "total_elapsed_ms": 3456,
+        },
+    }
+
+    await plugin._send_single_success_result(
+        event=event,
+        task_id="task-123",
+        job_index=1,
+        result=result,
+        enabled=True,
+    )
+
+    plugin.presenter.send_images.assert_awaited_once_with(
+        event,
+        [image_path],
+        text_prefix="生成耗时：3.5 秒",
+    )
+

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from astrbot.api.message_components import Image
+from astrbot.api.message_components import Image, Plain
 from astrbot.core import astrbot_config, file_token_service
 
 SEND_MODE_BASE64 = "base64"
@@ -19,34 +19,61 @@ class ResultPresenter:
         self.send_mode = self._normalize_send_mode(send_mode)
         self.url_base = str(url_base or "").strip()
 
-    async def send_images(self, event: Any, image_paths: list[Path]) -> None:
+    async def send_images(
+        self,
+        event: Any,
+        image_paths: list[Path],
+        text_prefix: str = "",
+    ) -> None:
         """发送图片消息，当前仅支持 OneBot v11。"""
 
         platform_name = str(event.get_platform_name() or "").strip()
         if platform_name != "aiocqhttp":
             raise RuntimeError("仅支持通过 OneBot v11 返回 QQ 图片消息")
 
+        clean_prefix = str(text_prefix or "").strip()
+
         if self.send_mode == SEND_MODE_URL:
-            await self._send_images_by_url(event, image_paths)
+            await self._send_images_by_url(
+                event, image_paths, text_prefix=clean_prefix
+            )
             return
 
-        image_chain = [
-            Image.fromFileSystem(str(Path(image_path))) for image_path in image_paths
-        ]
-        await event.send(event.chain_result(image_chain))
+        components = []
+        if clean_prefix:
+            components.append(Plain(f"{clean_prefix}\n"))
+        for image_path in image_paths:
+            components.append(Image.fromFileSystem(str(Path(image_path))))
+        await event.send(event.chain_result(components))
 
-    async def _send_images_by_url(self, event: Any, image_paths: list[Path]) -> None:
+    async def _send_images_by_url(
+        self,
+        event: Any,
+        image_paths: list[Path],
+        text_prefix: str = "",
+    ) -> None:
         """注册本地图片 URL 后直接调用 OneBot，绕过 AstrBot 的 base64 转换。"""
 
-        image_messages = [
-            {
-                "type": "image",
-                "data": {
-                    "file": await self._register_image_url(Path(image_path)),
-                },
-            }
-            for image_path in image_paths
-        ]
+        clean_prefix = str(text_prefix or "").strip()
+        image_messages = []
+        if clean_prefix:
+            image_messages.append(
+                {
+                    "type": "text",
+                    "data": {
+                        "text": f"{clean_prefix}\n",
+                    },
+                }
+            )
+        for image_path in image_paths:
+            image_messages.append(
+                {
+                    "type": "image",
+                    "data": {
+                        "file": await self._register_image_url(Path(image_path)),
+                    },
+                }
+            )
         if not image_messages:
             return
 

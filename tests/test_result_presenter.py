@@ -156,3 +156,63 @@ async def test_present_image_result_url_mode_requires_reachable_base(
 
     with pytest.raises(RuntimeError, match="image_send_url_base"):
         await presenter.send_images(event, [image_path])
+
+
+@pytest.mark.asyncio
+async def test_present_image_result_with_text_prefix_base64(tmp_path: Path):
+    from astrbot.api.message_components import Plain
+
+    module = _load_module()
+    event = _make_event(platform_name="aiocqhttp")
+    presenter = module.ResultPresenter()
+
+    image_path = tmp_path / "demo.png"
+    image_path.write_bytes(b"abc")
+
+    await presenter.send_images(event, [image_path], text_prefix="生成耗时：2.5 秒")
+
+    event.send.assert_awaited_once()
+    sent_chain = event.send.await_args.args[0]
+    assert len(sent_chain) == 2
+    assert isinstance(sent_chain[0], Plain)
+    assert sent_chain[0].text == "生成耗时：2.5 秒\n"
+    assert isinstance(sent_chain[1], Image)
+
+
+@pytest.mark.asyncio
+async def test_present_image_result_with_text_prefix_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    module = _load_module()
+    event = _make_event(platform_name="aiocqhttp")
+    presenter = module.ResultPresenter(
+        send_mode="url",
+        url_base="http://astrbot:6185/",
+    )
+    token_service = SimpleNamespace(register_file=AsyncMock(return_value="demo-token"))
+    monkeypatch.setattr(module, "file_token_service", token_service, raising=False)
+
+    image_path = tmp_path / "demo.png"
+    image_path.write_bytes(b"abc")
+
+    await presenter.send_images(event, [image_path], text_prefix="生成耗时：2.5 秒")
+
+    event.bot.send_group_msg.assert_awaited_once_with(
+        group_id=123456,
+        message=[
+            {
+                "type": "text",
+                "data": {
+                    "text": "生成耗时：2.5 秒\n",
+                },
+            },
+            {
+                "type": "image",
+                "data": {
+                    "file": "http://astrbot:6185/api/file/demo-token",
+                },
+            },
+        ],
+    )
+
