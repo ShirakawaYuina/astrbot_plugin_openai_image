@@ -15,14 +15,18 @@ from astrbot.api.web import error_response, json_response, request
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
 from .provider_config import (
+    ImageProviderConfig,
     read_raw_providers_json,
     write_raw_providers_json,
 )
+from .services.image_edit_service import ImageEditService
+from .services.image_generate_service import ImageGenerateService
 from .storage.cache_cleaner import IMAGE_SUFFIXES
 from .storage.thumbnail_store import ThumbnailStore
 
 PLUGIN_NAME = "astrbot_plugin_openai_image"
 PROMPT_OPTIMIZER_SETTINGS_FILE_NAME = "prompt_optimizer_settings.json"
+WEBUI_SETTINGS_FILE_NAME = "webui_settings.json"
 LOG_PROMPT_MAX_LENGTH = 120
 GALLERY_SORT_FIELDS = ("newest", "oldest", "name")
 GALLERY_MAX_PAGE_SIZE = 60
@@ -101,6 +105,56 @@ def _default_prompt_optimizer_settings_path() -> Path:
         Path(get_astrbot_plugin_data_path())
         / PLUGIN_NAME
         / PROMPT_OPTIMIZER_SETTINGS_FILE_NAME
+    )
+
+
+class WebUISettingsStore:
+    """读写 WebUI 独立配置（如当前选中的图片供应商/模型）。"""
+
+    def __init__(self, settings_path: Path | None = None) -> None:
+        self.settings_path = settings_path or _default_webui_settings_path()
+
+    def load(self) -> dict[str, Any]:
+        """读取本地配置文件，文件不存在时返回空配置。"""
+
+        if not self.settings_path.is_file():
+            return {}
+        try:
+            data = json.loads(self.settings_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"WebUI 配置读取失败: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError("WebUI 配置格式错误")
+        return data
+
+    def get_active_provider_id(self) -> str:
+        """读取 WebUI 选中的提供商 ID。"""
+
+        return str(self.load().get("active_provider_id", "") or "").strip()
+
+    def save_active_provider_id(self, provider_id: str) -> dict[str, Any]:
+        """保存 WebUI 选中的提供商 ID。"""
+
+        try:
+            current = self.load()
+        except Exception:
+            current = {}
+        current["active_provider_id"] = str(provider_id or "").strip()
+        self.settings_path.parent.mkdir(parents=True, exist_ok=True)
+        self.settings_path.write_text(
+            json.dumps(current, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return current
+
+
+def _default_webui_settings_path() -> Path:
+    """返回 WebUI 独立设置文件路径，统一放在插件数据目录内。"""
+
+    return (
+        Path(get_astrbot_plugin_data_path())
+        / PLUGIN_NAME
+        / WEBUI_SETTINGS_FILE_NAME
     )
 
 
@@ -216,15 +270,39 @@ def create_generation_job(
     size: str | None,
     quality: str,
     moderation: str,
+    generate_service: Any = None,
+    provider: Any = None,
 ) -> Callable[[], Awaitable[Path]]:
     """创建文生图任务闭包，供页面接口与任务调度服务组合。"""
 
+    service = generate_service or getattr(plugin, "_generate_service", None)
+    endpoint_type = (
+        provider.endpoint_type
+        if provider and hasattr(provider, "endpoint_type")
+        else (
+            plugin._get_endpoint_type()
+            if hasattr(plugin, "_get_endpoint_type")
+            else "responses"
+        )
+    )
+    model = (
+        provider.model
+        if provider and hasattr(provider, "model")
+        else (
+            plugin._get_configured_model()
+            if hasattr(plugin, "_get_configured_model")
+            else ""
+        )
+    )
+
     async def _job() -> Path:
-        return await plugin._generate_service.generate(
-            model=plugin._get_configured_model(),
+        resolve_size = getattr(plugin, "_resolve_output_size", None)
+        out_size = resolve_size(size) if callable(resolve_size) else size
+        return await service.generate(
+            model=model,
             prompt=prompt,
-            endpoint_type=plugin._get_endpoint_type(),
-            size=plugin._resolve_output_size(size),
+            endpoint_type=endpoint_type,
+            size=out_size,
             quality=quality,
             moderation=moderation,
         )
@@ -240,16 +318,40 @@ def create_edit_job(
     size: str | None,
     quality: str,
     moderation: str,
+    edit_service: Any = None,
+    provider: Any = None,
 ) -> Callable[[], Awaitable[Path]]:
     """创建图片编辑任务闭包，统一复用插件既有编辑服务。"""
 
+    service = edit_service or getattr(plugin, "_edit_service", None)
+    endpoint_type = (
+        provider.endpoint_type
+        if provider and hasattr(provider, "endpoint_type")
+        else (
+            plugin._get_endpoint_type()
+            if hasattr(plugin, "_get_endpoint_type")
+            else "responses"
+        )
+    )
+    model = (
+        provider.model
+        if provider and hasattr(provider, "model")
+        else (
+            plugin._get_configured_model()
+            if hasattr(plugin, "_get_configured_model")
+            else ""
+        )
+    )
+
     async def _job() -> Path:
-        return await plugin._edit_service.edit(
-            model=plugin._get_configured_model(),
+        resolve_size = getattr(plugin, "_resolve_output_size", None)
+        out_size = resolve_size(size) if callable(resolve_size) else size
+        return await service.edit(
+            model=model,
             prompt=prompt,
             data_urls=data_urls,
-            endpoint_type=plugin._get_endpoint_type(),
-            size=plugin._resolve_output_size(size),
+            endpoint_type=endpoint_type,
+            size=out_size,
             quality=quality,
             moderation=moderation,
         )
@@ -369,13 +471,130 @@ class ImageStudioApi:
     这里只提供图库浏览、删除、生成、编辑和提示词优化等插件自身能力。
     """
 
-    def __init__(self, plugin: Any, cache_dir: Path) -> None:
+    def __init__(
+        self,
+        plugin: Any,
+        cache_dir: Path,
+        webui_settings_path: Path | None = None,
+    ) -> None:
         self.plugin = plugin
         cache_path = Path(cache_dir)
         self.library = ImageLibrary(cache_path)
         # 受限 iframe 只能接收内联 base64，图库列表必须由服务端缩图后随响应一起返回。
         self.thumbnails = ThumbnailStore(cache_path.parent / "webui_thumbnails")
         self.prompt_optimizer_settings = PromptOptimizerSettingsStore()
+        self.webui_settings = WebUISettingsStore(webui_settings_path)
+        self._webui_gateway: Any | None = None
+        self._webui_gateway_provider: Any | None = None
+        self._webui_generate_service: Any | None = None
+        self._webui_edit_service: Any | None = None
+
+    async def close(self) -> None:
+        """释放 WebUI 独占的网关等网络资源。"""
+
+        if self._webui_gateway is not None:
+            await self._webui_gateway.close()
+            self._webui_gateway = None
+            self._webui_generate_service = None
+            self._webui_edit_service = None
+            self._webui_gateway_provider = None
+
+    def get_webui_active_image_provider(self) -> Any:
+        """获取 WebUI 独立选用的图片供应商。
+
+        若 WebUI 未单独配置，或配置的 provider_id 在可用列表中不存在，
+        回退至插件主配置所启用的供应商。
+        """
+
+        webui_provider_id = self.webui_settings.get_active_provider_id()
+        load_fn = getattr(self.plugin, "_load_configured_providers", None)
+        providers = load_fn() if callable(load_fn) else []
+        if webui_provider_id and providers:
+            matching = next(
+                (p for p in providers if p.provider_id == webui_provider_id), None
+            )
+            if matching is not None:
+                return matching
+
+        getter = getattr(self.plugin, "_get_active_image_provider", None)
+        if callable(getter):
+            return getter()
+        if providers:
+            return providers[0]
+        return None
+
+    async def _resolve_webui_services(
+        self, provider: Any
+    ) -> tuple[Any, Any]:
+        """为 WebUI 解析生图和编辑服务实例。
+
+        若 WebUI 选择的供应商与插件全局供应商相同，直接复用插件主服务；
+        若不同，则按该供应商独立创建网关并缓存服务实例。
+        """
+
+        plugin_active = getattr(self.plugin, "_active_image_provider", None)
+        if (
+            provider is None
+            or (
+                plugin_active is not None
+                and plugin_active.provider_id == getattr(provider, "provider_id", None)
+            )
+        ):
+            if self._webui_gateway is not None:
+                await self._webui_gateway.close()
+                self._webui_gateway = None
+                self._webui_generate_service = None
+                self._webui_edit_service = None
+                self._webui_gateway_provider = None
+            return getattr(self.plugin, "_generate_service", None), getattr(
+                self.plugin, "_edit_service", None
+            )
+
+        if (
+            self._webui_gateway is not None
+            and self._webui_gateway_provider == provider
+            and self._webui_generate_service is not None
+            and self._webui_edit_service is not None
+        ):
+            return self._webui_generate_service, self._webui_edit_service
+
+        create_gw = getattr(self.plugin, "_create_image_gateway", None)
+        if not callable(create_gw):
+            return getattr(self.plugin, "_generate_service", None), getattr(
+                self.plugin, "_edit_service", None
+            )
+
+        if self._webui_gateway is not None:
+            await self._webui_gateway.close()
+            self._webui_gateway = None
+
+        new_gateway = self.plugin._create_image_gateway(provider)
+        cache_store = getattr(self.plugin, "_cache_store", None)
+        self._webui_gateway = new_gateway
+        self._webui_gateway_provider = provider
+        self._webui_generate_service = ImageGenerateService(
+            gateway=new_gateway,
+            cache_store=cache_store,
+        )
+        self._webui_edit_service = ImageEditService(
+            gateway=new_gateway,
+            cache_store=cache_store,
+        )
+        return self._webui_generate_service, self._webui_edit_service
+
+    async def _get_webui_generate_service(self) -> tuple[Any, Any]:
+        """获取 WebUI 专用的生图服务及对应供应商配置。"""
+
+        provider = self.get_webui_active_image_provider()
+        gen_service, _ = await self._resolve_webui_services(provider)
+        return gen_service, provider
+
+    async def _get_webui_edit_service(self) -> tuple[Any, Any]:
+        """获取 WebUI 专用的图片编辑服务及对应供应商配置。"""
+
+        provider = self.get_webui_active_image_provider()
+        _, edit_service = await self._resolve_webui_services(provider)
+        return edit_service, provider
 
     def register(self) -> None:
         """向 Dashboard 注册内置页面使用的后端接口。"""
@@ -580,12 +799,14 @@ class ImageStudioApi:
         moderation = _option_text(payload.get("moderation"), "low")
 
         self.plugin._ensure_ready()
+        gen_service, provider = await self._get_webui_generate_service()
         self._log_web_request(
             mode="generate",
             prompt=prompt,
             size=size or "auto",
             quality=quality,
             moderation=moderation,
+            provider=provider,
         )
         task_result = await self.plugin._task_service.run_task(
             mode="web_generate",
@@ -595,6 +816,8 @@ class ImageStudioApi:
                 size=size,
                 quality=quality,
                 moderation=moderation,
+                generate_service=gen_service,
+                provider=provider,
             ),
             stage_name="web_generate",
         )
@@ -629,12 +852,14 @@ class ImageStudioApi:
         moderation = _option_text(payload.get("moderation"), "low")
 
         self.plugin._ensure_ready()
+        edit_service, provider = await self._get_webui_edit_service()
         self._log_web_request(
             mode="edit",
             prompt=prompt,
             size=size or "auto",
             quality=quality,
             moderation=moderation,
+            provider=provider,
         )
         task_result = await self.plugin._task_service.run_task(
             mode="web_edit",
@@ -645,6 +870,8 @@ class ImageStudioApi:
                 size=size,
                 quality=quality,
                 moderation=moderation,
+                edit_service=edit_service,
+                provider=provider,
             ),
             stage_name="web_edit",
         )
@@ -756,13 +983,17 @@ class ImageStudioApi:
 
     async def get_image_provider_settings(self) -> Any:
         """返回图片生成供应商与模型配置，供 WebUI 设置 Tab 展示。"""
-        providers = self.plugin._load_configured_providers()
-        active_provider = self.plugin._get_active_image_provider()
+        load_fn = getattr(self.plugin, "_load_configured_providers", None)
+        providers = load_fn() if callable(load_fn) else []
+        active_provider = self.get_webui_active_image_provider()
+        active_id = getattr(active_provider, "provider_id", "") if active_provider else ""
+        active_name = getattr(active_provider, "name", "") if active_provider else ""
+        active_model = getattr(active_provider, "model", "") if active_provider else ""
         return json_response(
             {
-                "active_provider_id": active_provider.provider_id,
-                "active_provider_name": active_provider.name,
-                "active_model": active_provider.model,
+                "active_provider_id": active_id,
+                "active_provider_name": active_name,
+                "active_model": active_model,
                 "providers": [
                     {
                         "provider_id": p.provider_id,
@@ -777,7 +1008,7 @@ class ImageStudioApi:
         )
 
     async def save_image_provider_settings(self) -> Any:
-        """保存 WebUI 设置 Tab 提交的当前启用图片供应商/模型。"""
+        """保存 WebUI 设置 Tab 提交的当前启用图片供应商/模型（仅在 WebUI 生效）。"""
         payload = await request.json(default={})
         if not isinstance(payload, dict):
             return error_response("请求体必须是 JSON 对象")
@@ -786,24 +1017,17 @@ class ImageStudioApi:
         if not provider_id:
             return error_response("未提供供应商 ID")
 
-        providers = self.plugin._load_configured_providers()
+        load_fn = getattr(self.plugin, "_load_configured_providers", None)
+        providers = load_fn() if callable(load_fn) else []
         matching = next((p for p in providers if p.provider_id == provider_id), None)
         if matching is None:
             return error_response(f"未找到指定的图片供应商: {provider_id}")
 
-        self.plugin.config["active_provider_id"] = provider_id
-        self.plugin.config.pop("image_providers", None)
-        if hasattr(self.plugin.config, "save_config"):
-            try:
-                self.plugin.config.save_config()
-            except Exception as exc:
-                logger.warning("[OpenAIImage] 保存配置失败: %s", exc)
-
-        self.plugin._rebuild_runtime_dependencies()
-        self.plugin._sync_schema_provider_options()
+        self.webui_settings.save_active_provider_id(provider_id)
+        await self._resolve_webui_services(matching)
 
         logger.info(
-            "[OpenAIImage][webui][image_provider] 已切换图片供应商 provider_id=%s name=%s model=%s",
+            "[OpenAIImage][webui][image_provider] 已切换 WebUI 图片供应商 provider_id=%s name=%s model=%s",
             matching.provider_id,
             matching.name,
             matching.model,
@@ -850,6 +1074,15 @@ class ImageStudioApi:
         self.plugin._rebuild_runtime_dependencies()
         self.plugin._sync_schema_provider_options()
 
+        # 检查 WebUI 独立选中的 provider 是否仍然有效；若已被删除，回退到有效供应商
+        webui_active_id = self.webui_settings.get_active_provider_id()
+        if webui_active_id and not any(
+            p.provider_id == webui_active_id for p in normalized_providers
+        ):
+            self.webui_settings.save_active_provider_id(
+                normalized_providers[0].provider_id
+            )
+
         logger.info(
             "[OpenAIImage][webui][providers_json] 已更新 providers.json，供应商数=%s",
             len(normalized_providers),
@@ -885,8 +1118,20 @@ class ImageStudioApi:
         size: str,
         quality: str,
         moderation: str,
+        provider: Any = None,
     ) -> None:
         """记录页面发起的图片任务，便于在 AstrBot 后台定位用户操作。"""
+
+        endpoint_type = (
+            getattr(provider, "endpoint_type", None)
+            if provider is not None
+            else self._safe_plugin_value("_get_endpoint_type")
+        )
+        model = (
+            getattr(provider, "model", None)
+            if provider is not None
+            else self._safe_plugin_value("_get_configured_model")
+        )
 
         logger.info(
             "[OpenAIImage][webui][%s] 收到请求 prompt=%s size=%s quality=%s moderation=%s endpoint_type=%s model=%s",
@@ -895,8 +1140,8 @@ class ImageStudioApi:
             size,
             quality,
             moderation,
-            self._safe_plugin_value("_get_endpoint_type"),
-            self._safe_plugin_value("_get_configured_model"),
+            endpoint_type,
+            model,
         )
 
     def _log_task_result(self, task_result: dict[str, Any]) -> None:

@@ -57,7 +57,7 @@
       "imageModel": "图片生成模型",
       "saveImageModel": "保存模型设置",
       "editProvidersJson": "编辑配置文件 (JSON)",
-      "imageModelHint": "选择当前生图与图片编辑使用的模型与供应商。供应商和模型列表读取自 providers.json 配置文件。",
+      "imageModelHint": "选择当前生图与图片编辑使用的模型与供应商（仅在 WebUI 生效，与机器人聊天命令独立）。供应商和模型列表读取自 providers.json 配置文件。",
       "imageModelSaved": "图片模型设置已保存",
       "noProvidersConfigured": "暂无可用供应商配置",
       "providersJsonTitle": "编辑 providers.json",

@@ -77,6 +77,7 @@ def _build_studio_api(tmp_path: Path, plugin=None):
     api = module.ImageStudioApi(
         plugin=plugin or SimpleNamespace(),
         cache_dir=cache_dir,
+        webui_settings_path=tmp_path / "webui_settings.json",
     )
     api.prompt_optimizer_settings = module.PromptOptimizerSettingsStore(
         tmp_path / "prompt_optimizer_settings.json"
@@ -569,7 +570,10 @@ async def test_image_provider_settings_round_trip(tmp_path: Path):
         saved = _read_json(await api.save_image_provider_settings())
     assert saved["active_provider_id"] == "custom"
     assert saved["active_model"] == "dall-e-3"
-    assert fake_plugin.config["active_provider_id"] == "custom"
+    # WebUI 独立选型：不修改插件全局 active_provider_id 配置
+    assert fake_plugin.config["active_provider_id"] == "default"
+    assert api.webui_settings.get_active_provider_id() == "custom"
+    assert api.get_webui_active_image_provider().provider_id == "custom"
 
     with _bind_request(body={"active_provider_id": "nonexistent"}):
         err = _read_json(await api.save_image_provider_settings())
@@ -1071,3 +1075,203 @@ def test_standalone_web_admin_config_is_removed():
     assert not (ROOT / "core" / "web_admin.py").exists()
     conf_schema = json.loads((ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
     assert not [key for key in conf_schema if key.startswith("web_admin_")]
+
+
+def test_webui_settings_store_unit(tmp_path: Path):
+    module = _load_module()
+    settings_file = tmp_path / "webui_settings.json"
+    store = module.WebUISettingsStore(settings_file)
+
+    assert store.get_active_provider_id() == ""
+    assert store.load() == {}
+
+    saved = store.save_active_provider_id("local_sd")
+    assert saved == {"active_provider_id": "local_sd"}
+    assert store.get_active_provider_id() == "local_sd"
+    assert json.loads(settings_file.read_text(encoding="utf-8")) == {
+        "active_provider_id": "local_sd"
+    }
+
+
+@pytest.mark.asyncio
+async def test_webui_generate_uses_webui_selected_provider_independently(tmp_path: Path):
+    from astrbot_plugin_openai_image.core.provider_config import ImageProviderConfig
+
+    output_path = tmp_path / "webui_generated.png"
+    _write_png(output_path)
+
+    providers = [
+        ImageProviderConfig(
+            provider_id="default",
+            name="默认供应商",
+            base_url="https://default.com/v1",
+            api_key="",
+            proxy_url="",
+            model="gpt-default",
+            endpoint_type="responses",
+        ),
+        ImageProviderConfig(
+            provider_id="webui_custom",
+            name="WebUI独享供应商",
+            base_url="https://custom.com/v1",
+            api_key="",
+            proxy_url="",
+            model="flux-pro",
+            endpoint_type="images",
+        ),
+    ]
+
+    class FakeTaskService:
+        async def run_task(self, *, mode, job_coro, stage_name):
+            return {
+                "success": True,
+                "mode": mode,
+                "payload": await job_coro(),
+                "timings": {},
+            }
+
+    class FakeCacheStore:
+        def save_image(self, image_bytes, extension):
+            return output_path
+
+        def save_image_metadata(self, image_path, metadata):
+            pass
+
+    recorded_calls = {}
+
+    class FakeCustomGateway:
+        async def request_image_generation(self, payload):
+            recorded_calls.update(payload)
+            return {"data": [{"b64_json": "Zmlyc3Q="}]}
+
+        async def close(self):
+            recorded_calls["closed"] = True
+
+    fake_gateway = FakeCustomGateway()
+
+    class FakePluginService:
+        async def generate(self, **kwargs):
+            raise AssertionError("插件全局服务不应被调用")
+
+    fake_plugin = SimpleNamespace(
+        config={"active_provider_id": "default"},
+        _load_configured_providers=lambda: providers,
+        _get_active_image_provider=lambda: providers[0],
+        _get_configured_model=lambda: "gpt-default",
+        _get_endpoint_type=lambda: "responses",
+        _resolve_output_size=lambda size: size or "1024x1024",
+        _ensure_ready=lambda: None,
+        _task_service=FakeTaskService(),
+        _generate_service=FakePluginService(),
+        _cache_store=FakeCacheStore(),
+        _create_image_gateway=lambda prov: fake_gateway if prov.provider_id == "webui_custom" else None,
+    )
+
+    api, cache_dir = _build_studio_api(tmp_path, plugin=fake_plugin)
+    (cache_dir / "webui_generated.png").write_bytes(output_path.read_bytes())
+    api.webui_settings.save_active_provider_id("webui_custom")
+
+    with _bind_request(body={"prompt": "太空漫游", "size": "1024x1024"}):
+        res = _read_json(await api.generate_image())
+
+    assert res["image"]["name"] == "webui_generated.png"
+    # 验证插件全局配置与 active_provider 完全不受影响
+    assert fake_plugin.config["active_provider_id"] == "default"
+    assert fake_plugin._get_active_image_provider().model == "gpt-default"
+    # 验证 WebUI 生图使用的是 WebUI 独立选择的供应商参数
+    assert recorded_calls["model"] == "flux-pro"
+    assert recorded_calls["prompt"] == "太空漫游"
+
+    await api.close()
+    assert recorded_calls.get("closed") is True
+
+
+@pytest.mark.asyncio
+async def test_webui_edit_uses_webui_selected_provider_independently(tmp_path: Path):
+    from astrbot_plugin_openai_image.core.provider_config import ImageProviderConfig
+
+    output_path = tmp_path / "webui_edited.png"
+    _write_png(output_path)
+
+    providers = [
+        ImageProviderConfig(
+            provider_id="default",
+            name="默认供应商",
+            base_url="https://default.com/v1",
+            api_key="",
+            proxy_url="",
+            model="gpt-default",
+            endpoint_type="responses",
+        ),
+        ImageProviderConfig(
+            provider_id="webui_custom",
+            name="WebUI独享供应商",
+            base_url="https://custom.com/v1",
+            api_key="",
+            proxy_url="",
+            model="dall-e-3",
+            endpoint_type="images",
+        ),
+    ]
+
+    class FakeTaskService:
+        async def run_task(self, *, mode, job_coro, stage_name):
+            return {
+                "success": True,
+                "mode": mode,
+                "payload": await job_coro(),
+                "timings": {},
+            }
+
+    class FakeCacheStore:
+        def save_image(self, image_bytes, extension):
+            return output_path
+
+        def save_image_metadata(self, image_path, metadata):
+            pass
+
+    recorded_calls = {}
+
+    class FakeCustomGateway:
+        async def request_image_edit(self, data, files):
+            recorded_calls.update(data)
+            recorded_calls["files"] = files
+            return {"data": [{"b64_json": "Zmlyc3Q="}]}
+
+        async def close(self):
+            recorded_calls["closed"] = True
+
+    fake_gateway = FakeCustomGateway()
+
+    fake_plugin = SimpleNamespace(
+        config={"active_provider_id": "default"},
+        _load_configured_providers=lambda: providers,
+        _get_active_image_provider=lambda: providers[0],
+        _get_configured_model=lambda: "gpt-default",
+        _get_endpoint_type=lambda: "responses",
+        _resolve_output_size=lambda size: size or "1024x1024",
+        _ensure_ready=lambda: None,
+        _task_service=FakeTaskService(),
+        _edit_service=SimpleNamespace(),
+        _cache_store=FakeCacheStore(),
+        _create_image_gateway=lambda prov: fake_gateway if prov.provider_id == "webui_custom" else None,
+    )
+
+    api, cache_dir = _build_studio_api(tmp_path, plugin=fake_plugin)
+    (cache_dir / "webui_edited.png").write_bytes(output_path.read_bytes())
+    api.webui_settings.save_active_provider_id("webui_custom")
+
+    with _bind_request(
+        body={
+            "prompt": "风格迁移",
+            "data_urls": ["data:image/png;base64,Zmlyc3Q="],
+        }
+    ):
+        res = _read_json(await api.edit_image())
+
+    assert res["image"]["name"] == "webui_edited.png"
+    assert fake_plugin.config["active_provider_id"] == "default"
+    assert recorded_calls["model"] == "dall-e-3"
+    assert recorded_calls["prompt"] == "风格迁移"
+    assert len(recorded_calls["files"]) == 1
+

@@ -92,6 +92,8 @@ class OpenAIImagePlugin(Star):
     async def terminate(self) -> None:
         """关闭插件内部创建的网络资源。"""
 
+        if self._studio_api is not None:
+            await self._studio_api.close()
         if self._image_gateway is not None:
             await self._image_gateway.close()
 
@@ -1127,7 +1129,10 @@ class OpenAIImagePlugin(Star):
         self._task_service = ImageTaskService(
             max_concurrency=int(self.config.get("max_concurrency", 2) or 2),
         )
-        self._studio_api = ImageStudioApi(plugin=self, cache_dir=cache_root)
+        if self._studio_api is None:
+            self._studio_api = ImageStudioApi(plugin=self, cache_dir=cache_root)
+        else:
+            self._studio_api.plugin = self
 
     def _create_image_gateway(
         self,
