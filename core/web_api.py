@@ -16,6 +16,7 @@ from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
 from .provider_config import (
     ImageProviderConfig,
+    is_same_model,
     read_raw_providers_json,
     write_raw_providers_json,
 )
@@ -298,14 +299,49 @@ def create_generation_job(
     async def _job() -> Path:
         resolve_size = getattr(plugin, "_resolve_output_size", None)
         out_size = resolve_size(size) if callable(resolve_size) else size
-        return await service.generate(
-            model=model,
-            prompt=prompt,
-            endpoint_type=endpoint_type,
-            size=out_size,
-            quality=quality,
-            moderation=moderation,
-        )
+        try:
+            return await service.generate(
+                model=model,
+                prompt=prompt,
+                endpoint_type=endpoint_type,
+                size=out_size,
+                quality=quality,
+                moderation=moderation,
+            )
+        except Exception as exc:
+            get_fallback = getattr(plugin, "_get_fallback_image_provider", None)
+            fallback = get_fallback() if callable(get_fallback) else None
+            create_gw = getattr(plugin, "_create_image_gateway", None)
+            if fallback is None or is_same_model(provider, fallback) or not callable(create_gw):
+                raise
+            logger.warning(
+                "[OpenAIImage][webui_generate] 主模型 %s 调用失败: %s，正在尝试回退模型 %s（%s）",
+                model,
+                exc,
+                fallback.model,
+                fallback.name,
+            )
+            fallback_gateway = create_gw(fallback)
+            try:
+                fallback_service = ImageGenerateService(
+                    gateway=fallback_gateway,
+                    cache_store=getattr(plugin, "_cache_store", None),
+                )
+                return await fallback_service.generate(
+                    model=fallback.model,
+                    prompt=prompt,
+                    endpoint_type=fallback.endpoint_type,
+                    size=out_size,
+                    quality=quality,
+                    moderation=moderation,
+                )
+            except Exception as fallback_exc:
+                raise RuntimeError(
+                    f"主模型 [{model}] 调用失败: {exc}；回退模型 [{fallback.model}] 调用失败: {fallback_exc}"
+                ) from fallback_exc
+            finally:
+                if hasattr(fallback_gateway, "close"):
+                    await fallback_gateway.close()
 
     return _job
 
@@ -346,15 +382,51 @@ def create_edit_job(
     async def _job() -> Path:
         resolve_size = getattr(plugin, "_resolve_output_size", None)
         out_size = resolve_size(size) if callable(resolve_size) else size
-        return await service.edit(
-            model=model,
-            prompt=prompt,
-            data_urls=data_urls,
-            endpoint_type=endpoint_type,
-            size=out_size,
-            quality=quality,
-            moderation=moderation,
-        )
+        try:
+            return await service.edit(
+                model=model,
+                prompt=prompt,
+                data_urls=data_urls,
+                endpoint_type=endpoint_type,
+                size=out_size,
+                quality=quality,
+                moderation=moderation,
+            )
+        except Exception as exc:
+            get_fallback = getattr(plugin, "_get_fallback_image_provider", None)
+            fallback = get_fallback() if callable(get_fallback) else None
+            create_gw = getattr(plugin, "_create_image_gateway", None)
+            if fallback is None or is_same_model(provider, fallback) or not callable(create_gw):
+                raise
+            logger.warning(
+                "[OpenAIImage][webui_edit] 主模型 %s 调用失败: %s，正在尝试回退模型 %s（%s）",
+                model,
+                exc,
+                fallback.model,
+                fallback.name,
+            )
+            fallback_gateway = create_gw(fallback)
+            try:
+                fallback_service = ImageEditService(
+                    gateway=fallback_gateway,
+                    cache_store=getattr(plugin, "_cache_store", None),
+                )
+                return await fallback_service.edit(
+                    model=fallback.model,
+                    prompt=prompt,
+                    data_urls=data_urls,
+                    endpoint_type=fallback.endpoint_type,
+                    size=out_size,
+                    quality=quality,
+                    moderation=moderation,
+                )
+            except Exception as fallback_exc:
+                raise RuntimeError(
+                    f"主模型 [{model}] 调用失败: {exc}；回退模型 [{fallback.model}] 调用失败: {fallback_exc}"
+                ) from fallback_exc
+            finally:
+                if hasattr(fallback_gateway, "close"):
+                    await fallback_gateway.close()
 
     return _job
 

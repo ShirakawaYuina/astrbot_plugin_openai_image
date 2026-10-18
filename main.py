@@ -26,8 +26,10 @@ from .core.presenters.result_presenter import ResultPresenter
 from .core.provider_config import (
     ImageProviderConfig,
     get_default_providers_path,
+    is_same_model,
     load_providers_from_file,
     resolve_active_image_provider,
+    resolve_fallback_image_provider,
     sync_schema_provider_options,
 )
 from .core.services.image_edit_service import ImageEditService
@@ -65,8 +67,10 @@ class OpenAIImagePlugin(Star):
         self._edit_service: ImageEditService | None = None
         self._task_service: ImageTaskService | None = None
         self._active_image_provider: ImageProviderConfig | None = None
+        self._fallback_image_provider: ImageProviderConfig | None = None
         self._studio_api: ImageStudioApi | None = None
         self._last_loaded_active_provider_id: str | None = None
+        self._last_loaded_fallback_provider_id: str | None = None
         self._providers_mtime: float = self._get_providers_file_mtime()
         self._sync_schema_provider_options()
 
@@ -745,17 +749,54 @@ class OpenAIImagePlugin(Star):
         assert self._generate_service is not None
 
         async def _run_one(index: int) -> dict[str, Any]:
+            async def _execute_generate() -> Path:
+                primary = self._get_active_image_provider()
+                fallback = self._get_fallback_image_provider()
+                try:
+                    return await self._generate_service.generate(
+                        model=primary.model,
+                        prompt=prompt,
+                        endpoint_type=primary.endpoint_type,
+                        size=size,
+                        quality=quality,
+                        moderation=moderation,
+                    )
+                except Exception as exc:
+                    if fallback is None or is_same_model(primary, fallback):
+                        raise
+                    logger.warning(
+                        "[OpenAIImage][generate] 主模型 %s（%s）调用失败: %s，正在尝试回退模型 %s（%s）",
+                        primary.model,
+                        primary.name,
+                        exc,
+                        fallback.model,
+                        fallback.name,
+                    )
+                    fallback_gateway = self._create_image_gateway(fallback)
+                    try:
+                        fallback_service = ImageGenerateService(
+                            gateway=fallback_gateway,
+                            cache_store=self._cache_store,
+                        )
+                        return await fallback_service.generate(
+                            model=fallback.model,
+                            prompt=prompt,
+                            endpoint_type=fallback.endpoint_type,
+                            size=size,
+                            quality=quality,
+                            moderation=moderation,
+                        )
+                    except Exception as fallback_exc:
+                        raise RuntimeError(
+                            f"主模型 [{primary.model}] 调用失败: {exc}；回退模型 [{fallback.model}] 调用失败: {fallback_exc}"
+                        ) from fallback_exc
+                    finally:
+                        await fallback_gateway.close()
+
             result = await self._task_service.run_task(
                 mode="generate",
                 stage_name="request",
-                job_coro=lambda: self._generate_service.generate(
-                    model=self._get_configured_model(),
-                    prompt=prompt,
-                    endpoint_type=self._get_endpoint_type(),
-                    size=size,
-                    quality=quality,
-                    moderation=moderation,
-                ),
+                job_coro=_execute_generate,
             )
             self._log_task_result(
                 task_id=task_id,
@@ -792,18 +833,56 @@ class OpenAIImagePlugin(Star):
         assert self._edit_service is not None
 
         async def _run_one(index: int) -> dict[str, Any]:
+            async def _execute_edit() -> Path:
+                primary = self._get_active_image_provider()
+                fallback = self._get_fallback_image_provider()
+                try:
+                    return await self._edit_service.edit(
+                        model=primary.model,
+                        prompt=prompt,
+                        data_urls=data_urls,
+                        endpoint_type=primary.endpoint_type,
+                        size=size,
+                        quality=quality,
+                        moderation=moderation,
+                    )
+                except Exception as exc:
+                    if fallback is None or is_same_model(primary, fallback):
+                        raise
+                    logger.warning(
+                        "[OpenAIImage][edit] 主模型 %s（%s）调用失败: %s，正在尝试回退模型 %s（%s）",
+                        primary.model,
+                        primary.name,
+                        exc,
+                        fallback.model,
+                        fallback.name,
+                    )
+                    fallback_gateway = self._create_image_gateway(fallback)
+                    try:
+                        fallback_service = ImageEditService(
+                            gateway=fallback_gateway,
+                            cache_store=self._cache_store,
+                        )
+                        return await fallback_service.edit(
+                            model=fallback.model,
+                            prompt=prompt,
+                            data_urls=data_urls,
+                            endpoint_type=fallback.endpoint_type,
+                            size=size,
+                            quality=quality,
+                            moderation=moderation,
+                        )
+                    except Exception as fallback_exc:
+                        raise RuntimeError(
+                            f"主模型 [{primary.model}] 调用失败: {exc}；回退模型 [{fallback.model}] 调用失败: {fallback_exc}"
+                        ) from fallback_exc
+                    finally:
+                        await fallback_gateway.close()
+
             result = await self._task_service.run_task(
                 mode="edit",
                 stage_name="request",
-                job_coro=lambda: self._edit_service.edit(
-                    model=self._get_configured_model(),
-                    prompt=prompt,
-                    data_urls=data_urls,
-                    endpoint_type=self._get_endpoint_type(),
-                    size=size,
-                    quality=quality,
-                    moderation=moderation,
-                ),
+                job_coro=_execute_edit,
             )
             self._log_task_result(
                 task_id=task_id,
@@ -1149,6 +1228,12 @@ class OpenAIImagePlugin(Star):
         active_provider = resolve_active_image_provider(self.config)
         self._active_image_provider = active_provider
         self._last_loaded_active_provider_id = active_provider.provider_id
+        self._fallback_image_provider = resolve_fallback_image_provider(self.config)
+        self._last_loaded_fallback_provider_id = (
+            self._fallback_image_provider.provider_id
+            if self._fallback_image_provider
+            else str(self.config.get("fallback_provider_id", "") or "").strip()
+        )
         self._providers_mtime = self._get_providers_file_mtime()
 
         self.presenter = ResultPresenter(
@@ -1233,6 +1318,33 @@ class OpenAIImagePlugin(Star):
                 self._edit_service.gateway = new_gateway
 
         return self._active_image_provider
+
+    def _get_fallback_image_provider(self) -> ImageProviderConfig | None:
+        """读取回退模型供应商，检测到配置或文件变更时更新。"""
+
+        current_fallback_id = str(
+            self.config.get("fallback_provider_id", "") or ""
+        ).strip()
+        current_mtime = self._get_providers_file_mtime()
+        need_reload = (
+            self._fallback_image_provider is None and bool(current_fallback_id)
+        ) or (
+            self._last_loaded_fallback_provider_id != current_fallback_id
+        ) or (
+            current_mtime > 0.0 and self._providers_mtime != current_mtime
+        )
+        if need_reload:
+            self._fallback_image_provider = resolve_fallback_image_provider(self.config)
+            self._last_loaded_fallback_provider_id = (
+                self._fallback_image_provider.provider_id
+                if self._fallback_image_provider
+                else current_fallback_id
+            )
+        elif not current_fallback_id:
+            self._fallback_image_provider = None
+            self._last_loaded_fallback_provider_id = ""
+
+        return self._fallback_image_provider
 
     def _resolve_output_size(self, command_size: str | None = None) -> str | None:
         """解析本次请求尺寸，命令参数优先，配置默认值作为兜底。"""

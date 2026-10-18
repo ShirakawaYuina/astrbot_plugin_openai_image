@@ -7,9 +7,21 @@
             "default"
         ],
         "labels": [
-            "默认供应商"
+            "gpt-5.4-mini（默认供应商）"
         ],
         "hint": "下拉选择机器人命令与 LLM 工具当前使用的图片接口供应商。WebUI 界面可在其设置中独立选择模型，互不影响。供应商名称与模型配置请编辑 data/plugin_data/astrbot_plugin_openai_image/providers.json。"
+    },
+    "fallback_provider_id": {
+        "description": "回退模型",
+        "type": "string",
+        "default": "",
+        "options": [
+            ""
+        ],
+        "labels": [
+            "不启用回退"
+        ],
+        "hint": "当主模型调用失败时，自动重试调用的回退图片模型/供应商。若回退模型与主模型为同一模型或未配置，则不进行回退直接返回失败。"
     },
     "image_size": {
         "description": "默认输出图片尺寸",

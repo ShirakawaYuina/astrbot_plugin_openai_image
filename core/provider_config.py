@@ -16,6 +16,7 @@ DEFAULT_ENDPOINT_TYPE = "responses"
 DEFAULT_RESPONSES_MODEL = "gpt-5.4-mini"
 DEFAULT_IMAGES_MODEL = "gpt-image-2"
 ACTIVE_PROVIDER_ID_CONFIG_KEY = "active_provider_id"
+FALLBACK_PROVIDER_ID_CONFIG_KEY = "fallback_provider_id"
 IMAGE_PROVIDERS_CONFIG_KEY = "image_providers"
 PROVIDERS_FILE_NAME = "providers.json"
 PLUGIN_NAME = "astrbot_plugin_openai_image"
@@ -277,22 +278,46 @@ def write_raw_providers_json(
     return normalized
 
 
+def format_provider_label(provider: ImageProviderConfig) -> str:
+    """按 '模型名称（供应商名称）' 格式化供应商选项显示标签。
+
+    Args:
+        provider: 供应商配置对象。
+
+    Returns:
+        形如 'gpt-image-2（jucode）' 的显示标签字符串。
+    """
+    model = str(provider.model or "").strip()
+    name = str(provider.name or "").strip()
+    if model and name:
+        return f"{model}（{name}）"
+    return model or name or DEFAULT_PROVIDER_NAME
+
+
 def sync_schema_provider_options(
     schema: dict[str, Any] | None,
     providers: list[ImageProviderConfig],
 ) -> None:
-    """将供应商列表的 ID 与名称同步到 active_provider_id 的 options 与 labels 中。
+    """将供应商列表的 ID 与模型（供应商）名称同步到 active_provider_id 与 fallback_provider_id 的 options 与 labels 中。
 
     Args:
         schema: AstrBot 配置 Schema 字典。
         providers: 当前加载的有效供应商列表。
     """
-    if not isinstance(schema, dict) or ACTIVE_PROVIDER_ID_CONFIG_KEY not in schema:
+    if not isinstance(schema, dict):
         return
+
+    default_label = f"{DEFAULT_RESPONSES_MODEL}（{DEFAULT_PROVIDER_NAME}）"
     options = [p.provider_id for p in providers] or [DEFAULT_PROVIDER_ID]
-    labels = [p.name for p in providers] or [DEFAULT_PROVIDER_NAME]
-    schema[ACTIVE_PROVIDER_ID_CONFIG_KEY]["options"] = options
-    schema[ACTIVE_PROVIDER_ID_CONFIG_KEY]["labels"] = labels
+    labels = [format_provider_label(p) for p in providers] or [default_label]
+
+    if ACTIVE_PROVIDER_ID_CONFIG_KEY in schema:
+        schema[ACTIVE_PROVIDER_ID_CONFIG_KEY]["options"] = options
+        schema[ACTIVE_PROVIDER_ID_CONFIG_KEY]["labels"] = labels
+
+    if FALLBACK_PROVIDER_ID_CONFIG_KEY in schema:
+        schema[FALLBACK_PROVIDER_ID_CONFIG_KEY]["options"] = [""] + options
+        schema[FALLBACK_PROVIDER_ID_CONFIG_KEY]["labels"] = ["不启用回退"] + labels
 
 
 def resolve_active_image_provider(
@@ -341,6 +366,80 @@ def resolve_active_image_provider(
             return provider
 
     raise ValueError(f"未找到启用的图片供应商: {active_provider_id or '(空值)'}")
+
+
+def resolve_fallback_image_provider(
+    config: dict[str, Any],
+    providers_path: Path | None = None,
+) -> ImageProviderConfig | None:
+    """从配置中解析失败回退图片供应商。
+
+    若未配置 fallback_provider_id、配置为空或指定为 'none' 等禁用值，返回 None。
+    若配置的 ID 在可用供应商列表中不存在，返回 None。
+
+    Args:
+        config: 插件全局配置字典。
+        providers_path: 可选的 providers.json 文件路径。
+
+    Returns:
+        解析出的回退 ImageProviderConfig，未配置或未找到有效条目时返回 None。
+    """
+    fallback_id = str(
+        config.get(FALLBACK_PROVIDER_ID_CONFIG_KEY, "") or ""
+    ).strip()
+    if not fallback_id or fallback_id.lower() in (
+        "none",
+        "null",
+        "false",
+        "off",
+        "disable",
+        "",
+    ):
+        return None
+
+    if providers_path is not None:
+        providers = load_providers_from_file(providers_path)
+    elif IMAGE_PROVIDERS_CONFIG_KEY in config and isinstance(
+        config[IMAGE_PROVIDERS_CONFIG_KEY], list
+    ):
+        providers, _ = normalize_providers_list(config[IMAGE_PROVIDERS_CONFIG_KEY])
+    else:
+        legacy = (
+            config.get(IMAGE_PROVIDERS_CONFIG_KEY)
+            if isinstance(config.get(IMAGE_PROVIDERS_CONFIG_KEY), list)
+            else None
+        )
+        providers = load_providers_from_file(None, legacy_providers=legacy)
+
+    for provider in providers:
+        if provider.provider_id == fallback_id:
+            return provider
+
+    return None
+
+
+def is_same_model(
+    primary: ImageProviderConfig | None,
+    fallback: ImageProviderConfig | None,
+) -> bool:
+    """判断主模型与回退模型是否为同一模型。
+
+    Args:
+        primary: 主供应商配置。
+        fallback: 回退供应商配置。
+
+    Returns:
+        若任一为空、ID 相同或模型名称相同则返回 True，否则返回 False。
+    """
+    if primary is None or fallback is None:
+        return True
+    if primary.provider_id == fallback.provider_id:
+        return True
+    primary_model = str(primary.model or "").strip().lower()
+    fallback_model = str(fallback.model or "").strip().lower()
+    if primary_model == fallback_model:
+        return True
+    return False
 
 
 def _provider_to_dict(provider: ImageProviderConfig) -> dict[str, Any]:

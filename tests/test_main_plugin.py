@@ -4,7 +4,7 @@ import importlib
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -1343,5 +1343,171 @@ async def test_finalize_results_sends_each_result_with_individual_elapsed_time(t
             call(event, [img2], text_prefix="生成耗时：3.4 秒"),
         ]
     )
+
+
+@pytest.mark.asyncio
+async def test_generate_fallback_when_primary_fails(tmp_path: Path):
+    module = _load_module()
+    output_path = tmp_path / "fallback.png"
+    output_path.write_bytes(b"fallback")
+
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "active_provider_id": "primary",
+            "fallback_provider_id": "backup",
+            "image_providers": [
+                {
+                    "provider_id": "primary",
+                    "name": "主供应商",
+                    "base_url": "https://p1.com/v1",
+                    "model": "model-primary",
+                    "endpoint_type": "responses",
+                },
+                {
+                    "provider_id": "backup",
+                    "name": "备用供应商",
+                    "base_url": "https://p2.com/v1",
+                    "model": "model-backup",
+                    "endpoint_type": "images",
+                },
+            ],
+        },
+    )
+
+    plugin._task_service = module.ImageTaskService(max_concurrency=2)
+    # 主服务模拟失败
+    plugin._generate_service = SimpleNamespace(
+        generate=AsyncMock(side_effect=RuntimeError("主接口额度不足"))
+    )
+
+    # 模拟回退网关与服务
+    fake_fallback_gateway = SimpleNamespace(close=AsyncMock())
+    plugin._create_image_gateway = MagicMock(return_value=fake_fallback_gateway)
+
+    # 包装 ImageGenerateService 模拟回退成功
+    with patch.object(
+        module,
+        "ImageGenerateService",
+        return_value=SimpleNamespace(
+            generate=AsyncMock(return_value=output_path)
+        ),
+    ):
+        results = await plugin._run_generate_jobs(
+            task_id="test-task",
+            count=1,
+            prompt="测试生图",
+        )
+
+    assert len(results) == 1
+    assert results[0]["success"] is True
+    assert results[0]["payload"] == output_path
+    plugin._generate_service.generate.assert_awaited_once()
+    fake_fallback_gateway.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_generate_no_fallback_when_same_model(tmp_path: Path):
+    module = _load_module()
+
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "active_provider_id": "p1",
+            "fallback_provider_id": "p2",
+            "image_providers": [
+                {
+                    "provider_id": "p1",
+                    "name": "供应商1",
+                    "base_url": "https://p1.com/v1",
+                    "model": "flux-dev",
+                },
+                {
+                    "provider_id": "p2",
+                    "name": "供应商2",
+                    "base_url": "https://p2.com/v1",
+                    "model": "flux-dev",
+                },
+            ],
+        },
+    )
+
+    plugin._task_service = module.ImageTaskService(max_concurrency=2)
+    plugin._generate_service = SimpleNamespace(
+        generate=AsyncMock(side_effect=RuntimeError("显存不足"))
+    )
+    plugin._create_image_gateway = MagicMock()
+
+    results = await plugin._run_generate_jobs(
+        task_id="test-task-no-fallback",
+        count=1,
+        prompt="测试生图",
+    )
+
+    assert len(results) == 1
+    assert results[0]["success"] is False
+    assert "显存不足" in results[0]["error_message"]
+    # 确认回退模型由于与主模型相同，未被调用
+    assert not any(
+        call_args[0][0].provider_id == "p2"
+        for call_args in plugin._create_image_gateway.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_edit_fallback_when_primary_fails(tmp_path: Path):
+    module = _load_module()
+    output_path = tmp_path / "fallback_edit.png"
+    output_path.write_bytes(b"fallback_edit")
+
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "active_provider_id": "primary",
+            "fallback_provider_id": "backup",
+            "image_providers": [
+                {
+                    "provider_id": "primary",
+                    "name": "主供应商",
+                    "base_url": "https://p1.com/v1",
+                    "model": "model-primary",
+                },
+                {
+                    "provider_id": "backup",
+                    "name": "备用供应商",
+                    "base_url": "https://p2.com/v1",
+                    "model": "model-backup",
+                },
+            ],
+        },
+    )
+
+    plugin._task_service = module.ImageTaskService(max_concurrency=2)
+    plugin._edit_service = SimpleNamespace(
+        edit=AsyncMock(side_effect=RuntimeError("编辑失败"))
+    )
+    fake_fallback_gateway = SimpleNamespace(close=AsyncMock())
+    plugin._create_image_gateway = MagicMock(return_value=fake_fallback_gateway)
+
+    with patch.object(
+        module,
+        "ImageEditService",
+        return_value=SimpleNamespace(
+            edit=AsyncMock(return_value=output_path)
+        ),
+    ):
+        results = await plugin._run_edit_jobs(
+            task_id="test-task-edit",
+            count=1,
+            prompt="测试编辑",
+            data_urls=["data:image/png;base64,123"],
+        )
+
+    assert len(results) == 1
+    assert results[0]["success"] is True
+    assert results[0]["payload"] == output_path
+    plugin._edit_service.edit.assert_awaited_once()
+    fake_fallback_gateway.close.assert_awaited_once()
+
 
 

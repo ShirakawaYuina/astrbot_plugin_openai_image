@@ -155,7 +155,7 @@ function renderImageModelSettings(settings) {
     opt.value = prov.provider_id;
     const modelText = prov.model || t("defaultModel", "使用 AstrBot 默认模型");
     const nameText = prov.name || prov.provider_id;
-    opt.textContent = `${modelText} (${nameText})`;
+    opt.textContent = `${modelText}（${nameText}）`;
     select.appendChild(opt);
   });
 

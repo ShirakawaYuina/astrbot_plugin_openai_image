@@ -205,7 +205,11 @@ def test_sync_schema_provider_options():
         "active_provider_id": {
             "options": ["old"],
             "labels": ["旧供应商"],
-        }
+        },
+        "fallback_provider_id": {
+            "options": [""],
+            "labels": ["旧回退"],
+        },
     }
     providers = [
         module.ImageProviderConfig(
@@ -230,7 +234,9 @@ def test_sync_schema_provider_options():
 
     module.sync_schema_provider_options(schema, providers)
     assert schema["active_provider_id"]["options"] == ["p1", "p2"]
-    assert schema["active_provider_id"]["labels"] == ["供应商A", "供应商B"]
+    assert schema["active_provider_id"]["labels"] == ["m1（供应商A）", "m2（供应商B）"]
+    assert schema["fallback_provider_id"]["options"] == ["", "p1", "p2"]
+    assert schema["fallback_provider_id"]["labels"] == ["不启用回退", "m1（供应商A）", "m2（供应商B）"]
 
 
 def test_normalize_providers_list_deduplicates_and_assigns_unique_ids():
@@ -327,4 +333,114 @@ def test_write_raw_providers_json_deduplicates_ids(tmp_path: Path):
 
     disk_data = json.loads(target_file.read_text(encoding="utf-8"))
     assert disk_data[1]["provider_id"] == "my_api_model-b"
+
+
+def test_resolve_fallback_image_provider(tmp_path: Path):
+    module = _load_module()
+    target_file = tmp_path / "providers.json"
+    target_file.write_text(
+        json.dumps(
+            [
+                {
+                    "provider_id": "primary",
+                    "name": "主供应商",
+                    "base_url": "https://p1.com/v1",
+                    "model": "model-1",
+                },
+                {
+                    "provider_id": "backup",
+                    "name": "备用供应商",
+                    "base_url": "https://p2.com/v1",
+                    "model": "model-2",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    # 正常解析回退配置
+    fallback = module.resolve_fallback_image_provider(
+        {"fallback_provider_id": "backup"},
+        providers_path=target_file,
+    )
+    assert fallback is not None
+    assert fallback.provider_id == "backup"
+    assert fallback.model == "model-2"
+
+    # 未配置或显式禁用
+    assert (
+        module.resolve_fallback_image_provider(
+            {"fallback_provider_id": ""},
+            providers_path=target_file,
+        )
+        is None
+    )
+    assert (
+        module.resolve_fallback_image_provider(
+            {"fallback_provider_id": "none"},
+            providers_path=target_file,
+        )
+        is None
+    )
+    assert (
+        module.resolve_fallback_image_provider(
+            {},
+            providers_path=target_file,
+        )
+        is None
+    )
+
+    # 配置了不存在的 ID
+    assert (
+        module.resolve_fallback_image_provider(
+            {"fallback_provider_id": "nonexistent"},
+            providers_path=target_file,
+        )
+        is None
+    )
+
+
+def test_is_same_model():
+    module = _load_module()
+    p1 = module.ImageProviderConfig(
+        provider_id="p1",
+        name="供应商A",
+        base_url="https://a.com",
+        api_key="",
+        proxy_url="",
+        model="gpt-image-2",
+        endpoint_type="responses",
+    )
+    p2 = module.ImageProviderConfig(
+        provider_id="p2",
+        name="供应商B",
+        base_url="https://b.com",
+        api_key="",
+        proxy_url="",
+        model="gpt-image-2",
+        endpoint_type="images",
+    )
+    p3 = module.ImageProviderConfig(
+        provider_id="p3",
+        name="供应商C",
+        base_url="https://c.com",
+        api_key="",
+        proxy_url="",
+        model="dall-e-3",
+        endpoint_type="images",
+    )
+
+    # 任一为空
+    assert module.is_same_model(None, p1) is True
+    assert module.is_same_model(p1, None) is True
+
+    # 相同 provider_id
+    assert module.is_same_model(p1, p1) is True
+
+    # 不同 provider_id 但 model 名称相同（大小写不敏感）
+    assert module.is_same_model(p1, p2) is True
+
+    # 完全不同的模型
+    assert module.is_same_model(p1, p3) is False
+
 
