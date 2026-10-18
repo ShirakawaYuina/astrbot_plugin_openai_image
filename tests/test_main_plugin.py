@@ -4,7 +4,7 @@ import importlib
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 
@@ -1258,4 +1258,90 @@ async def test_send_single_success_result_passes_text_prefix_with_elapsed_time(t
         [image_path],
         text_prefix="生成耗时：3.5 秒",
     )
+
+
+@pytest.mark.asyncio
+async def test_send_single_success_result_prefers_individual_elapsed_ms(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    plugin.presenter = SimpleNamespace(send_images=AsyncMock())
+
+    image_path = tmp_path / "result.png"
+    image_path.write_bytes(b"data")
+
+    event = _make_event()
+    result = {
+        "success": True,
+        "payload": str(image_path),
+        "timings": {
+            "queue_wait_ms": 5000,
+            "elapsed_ms": 1234,
+            "total_elapsed_ms": 6234,
+        },
+    }
+
+    await plugin._send_single_success_result(
+        event=event,
+        task_id="task-123",
+        job_index=1,
+        result=result,
+        enabled=True,
+    )
+
+    plugin.presenter.send_images.assert_awaited_once_with(
+        event,
+        [image_path],
+        text_prefix="生成耗时：1.2 秒",
+    )
+
+
+@pytest.mark.asyncio
+async def test_finalize_results_sends_each_result_with_individual_elapsed_time(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    plugin.presenter = SimpleNamespace(send_images=AsyncMock())
+
+    img1 = tmp_path / "img1.png"
+    img2 = tmp_path / "img2.png"
+    img1.write_bytes(b"1")
+    img2.write_bytes(b"2")
+
+    event = _make_event()
+    task_results = [
+        {
+            "success": True,
+            "payload": str(img1),
+            "timings": {
+                "elapsed_ms": 2100,
+                "total_elapsed_ms": 2100,
+            },
+        },
+        {
+            "success": True,
+            "payload": str(img2),
+            "timings": {
+                "elapsed_ms": 3400,
+                "total_elapsed_ms": 5500,
+            },
+        },
+    ]
+
+    await plugin._finalize_results(
+        event=event,
+        task_id="task-456",
+        mode="generate",
+        task_results=task_results,
+        command_start=0,
+        send_user_message=False,
+        results_already_sent=False,
+    )
+
+    assert plugin.presenter.send_images.await_count == 2
+    plugin.presenter.send_images.assert_has_awaits(
+        [
+            call(event, [img1], text_prefix="生成耗时：2.1 秒"),
+            call(event, [img2], text_prefix="生成耗时：3.4 秒"),
+        ]
+    )
+
 

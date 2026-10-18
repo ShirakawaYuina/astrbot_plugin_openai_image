@@ -840,10 +840,14 @@ class OpenAIImagePlugin(Star):
 
         image_path = Path(str(result["payload"]))
         timings = result.get("timings", {})
-        total_elapsed_ms = timings.get("total_elapsed_ms")
+        elapsed_ms = (
+            timings.get("elapsed_ms")
+            if timings.get("elapsed_ms") is not None
+            else timings.get("total_elapsed_ms")
+        )
         text_prefix = (
-            self._format_elapsed_text(total_elapsed_ms)
-            if total_elapsed_ms is not None
+            self._format_elapsed_text(elapsed_ms)
+            if elapsed_ms is not None
             else ""
         )
         send_start = time.perf_counter()
@@ -920,34 +924,46 @@ class OpenAIImagePlugin(Star):
             return {"status": "failed", "summary": message}
 
         if not results_already_sent:
-            send_start = time.perf_counter()
-            total_elapsed_ms = int((time.perf_counter() - command_start) * 1000)
-            text_prefix = self._format_elapsed_text(total_elapsed_ms)
-            try:
-                await self.presenter.send_images(
-                    event, success_paths, text_prefix=text_prefix
+            for result in task_results:
+                if not result.get("success") or not result.get("payload"):
+                    continue
+                image_path = Path(str(result["payload"]))
+                timings = result.get("timings", {})
+                elapsed_ms = (
+                    timings.get("elapsed_ms")
+                    if timings.get("elapsed_ms") is not None
+                    else timings.get("total_elapsed_ms")
                 )
-            except Exception as exc:  # noqa: BLE001
+                text_prefix = (
+                    self._format_elapsed_text(elapsed_ms)
+                    if elapsed_ms is not None
+                    else ""
+                )
+                send_start = time.perf_counter()
+                try:
+                    await self.presenter.send_images(
+                        event, [image_path], text_prefix=text_prefix
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    send_elapsed_ms = int((time.perf_counter() - send_start) * 1000)
+                    logger.error(
+                        "[OpenAIImage][send][task_id=%s] 平台发送失败 elapsed_ms=%s error=%s",
+                        task_id,
+                        send_elapsed_ms,
+                        exc,
+                        exc_info=True,
+                    )
+                    message = f"图片已生成，但发送到 QQ 失败：{exc}"
+                    if send_user_message:
+                        await event.send(event.plain_result(message))
+                    return {"status": "failed", "summary": message}
+
                 send_elapsed_ms = int((time.perf_counter() - send_start) * 1000)
-                logger.error(
-                    "[OpenAIImage][send][task_id=%s] 平台发送失败 elapsed_ms=%s error=%s",
+                logger.info(
+                    "[OpenAIImage][send][task_id=%s] 发送完成 elapsed_ms=%s",
                     task_id,
                     send_elapsed_ms,
-                    exc,
-                    exc_info=True,
                 )
-                message = f"图片已生成，但发送到 QQ 失败：{exc}"
-                if send_user_message:
-                    await event.send(event.plain_result(message))
-                return {"status": "failed", "summary": message}
-
-            send_elapsed_ms = int((time.perf_counter() - send_start) * 1000)
-            logger.info(
-                "[OpenAIImage][send][task_id=%s] 发送完成 elapsed_ms=%s image_count=%s",
-                task_id,
-                send_elapsed_ms,
-                len(success_paths),
-            )
 
         total_elapsed_ms = int((time.perf_counter() - command_start) * 1000)
         logger.info(
@@ -1281,23 +1297,26 @@ class OpenAIImagePlugin(Star):
         """记录单个任务的耗时与结果。"""
 
         timings = result.get("timings", {})
+        elapsed_ms = timings.get("elapsed_ms", timings.get("total_elapsed_ms", 0))
         if result.get("success"):
             logger.info(
-                "[OpenAIImage][task][task_id=%s][job=%s] success queue_wait_ms=%s total_elapsed_ms=%s",
+                "[OpenAIImage][task][task_id=%s][job=%s] success queue_wait_ms=%s elapsed_ms=%s total_elapsed_ms=%s",
                 task_id,
                 job_index,
                 timings.get("queue_wait_ms", 0),
+                elapsed_ms,
                 timings.get("total_elapsed_ms", 0),
             )
             return
 
         logger.error(
-            "[OpenAIImage][task][task_id=%s][job=%s] failed error_stage=%s error_message=%s queue_wait_ms=%s total_elapsed_ms=%s",
+            "[OpenAIImage][task][task_id=%s][job=%s] failed error_stage=%s error_message=%s queue_wait_ms=%s elapsed_ms=%s total_elapsed_ms=%s",
             task_id,
             job_index,
             result.get("error_stage", "request"),
             result.get("error_message", "未知错误"),
             timings.get("queue_wait_ms", 0),
+            elapsed_ms,
             timings.get("total_elapsed_ms", 0),
         )
 

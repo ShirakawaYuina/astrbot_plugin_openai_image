@@ -892,7 +892,9 @@ async function submitCreateTask() {
             ? data.image
             : await fetchFullImage(data.image.name);
         slots[index] = img;
-        if (data.timings && typeof data.timings.total_elapsed_ms === "number") {
+        if (data.timings && typeof data.timings.elapsed_ms === "number") {
+          slots[index].serverElapsedMs = data.timings.elapsed_ms;
+        } else if (data.timings && typeof data.timings.total_elapsed_ms === "number") {
           slots[index].serverElapsedMs = data.timings.total_elapsed_ms;
         }
         completedCount += 1;

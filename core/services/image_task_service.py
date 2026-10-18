@@ -36,10 +36,16 @@ class ImageTaskService:
         try:
             async with self._semaphore:
                 queue_wait_ms = int((time.perf_counter() - wait_start_time) * 1000)
+                execute_start_time = time.perf_counter()
                 try:
                     payload = await job_coro()
                 except Exception as exc:  # noqa: BLE001
-                    total_elapsed_ms = int((time.perf_counter() - task_start_time) * 1000)
+                    execute_elapsed_ms = int(
+                        (time.perf_counter() - execute_start_time) * 1000
+                    )
+                    total_elapsed_ms = int(
+                        (time.perf_counter() - task_start_time) * 1000
+                    )
                     return {
                         "success": False,
                         "mode": mode,
@@ -47,10 +53,14 @@ class ImageTaskService:
                         "error_message": str(exc),
                         "timings": {
                             "queue_wait_ms": queue_wait_ms,
+                            "elapsed_ms": execute_elapsed_ms,
                             "total_elapsed_ms": total_elapsed_ms,
                         },
                     }
 
+                execute_elapsed_ms = int(
+                    (time.perf_counter() - execute_start_time) * 1000
+                )
                 total_elapsed_ms = int((time.perf_counter() - task_start_time) * 1000)
                 return {
                     "success": True,
@@ -58,6 +68,7 @@ class ImageTaskService:
                     "payload": payload,
                     "timings": {
                         "queue_wait_ms": queue_wait_ms,
+                        "elapsed_ms": execute_elapsed_ms,
                         "total_elapsed_ms": total_elapsed_ms,
                     },
                 }

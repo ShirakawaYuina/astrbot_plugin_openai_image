@@ -31,6 +31,7 @@ async def test_task_service_returns_stage_timings_for_success():
     assert result["mode"] == "generate"
     assert result["timings"]["total_elapsed_ms"] >= 0
     assert result["timings"]["queue_wait_ms"] >= 0
+    assert result["timings"]["elapsed_ms"] >= 0
 
 
 @pytest.mark.asyncio
@@ -74,4 +75,35 @@ async def test_task_service_tracks_active_tasks():
     release.set()
     await task
     assert service.active_tasks == 0
+
+
+@pytest.mark.asyncio
+async def test_task_service_measures_execution_elapsed_ms_separately_from_queue_wait():
+    import asyncio
+
+    module = _load_module()
+
+    service = module.ImageTaskService(max_concurrency=1)
+
+    gate = asyncio.Event()
+
+    async def first_job():
+        await gate.wait()
+        return "first"
+
+    async def second_job():
+        return "second"
+
+    task1 = asyncio.create_task(service.run_task(mode="generate", job_coro=first_job))
+    await asyncio.sleep(0.05)
+    task2 = asyncio.create_task(service.run_task(mode="generate", job_coro=second_job))
+    await asyncio.sleep(0.05)
+
+    gate.set()
+    res1, res2 = await asyncio.gather(task1, task2)
+
+    assert res2["timings"]["queue_wait_ms"] >= 30
+    assert res2["timings"]["total_elapsed_ms"] >= res2["timings"]["queue_wait_ms"]
+    assert res2["timings"]["elapsed_ms"] < res2["timings"]["queue_wait_ms"]
+
 

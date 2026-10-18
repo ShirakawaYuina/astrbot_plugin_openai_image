@@ -1148,7 +1148,7 @@ class ImageStudioApi:
         """记录页面任务执行结果，失败日志包含阶段和错误摘要。"""
 
         timings = task_result.get("timings", {})
-        elapsed_ms = timings.get("total_elapsed_ms") or timings.get("elapsed_ms")
+        elapsed_ms = timings.get("elapsed_ms") or timings.get("total_elapsed_ms")
         queue_wait_ms = timings.get("queue_wait_ms")
         mode = str(task_result.get("mode") or "web_unknown")
         if task_result.get("success"):
