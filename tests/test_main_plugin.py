@@ -438,6 +438,9 @@ async def test_generate_llm_tool_returns_summary_text():
         count=1,
     )
 
+    event.send.assert_awaited_once()
+    assert "生成一只小猫" in event._sent_messages[0]
+    assert "正在生成中" in event._sent_messages[0]
     plugin._execute_generate_flow.assert_awaited_once()
     assert "已生成 1 张图片" == result
 
@@ -454,7 +457,34 @@ async def test_edit_llm_tool_returns_error_when_no_image_found():
         count=1,
     )
 
+    event.send.assert_not_awaited()
     assert "未检测到图片" in result
+
+
+@pytest.mark.asyncio
+async def test_openai_edit_image_tool_sends_pending_message():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    image_component = SimpleNamespace(type="image")
+    event = _make_event(message_components=[image_component])
+    plugin._execute_edit_flow = AsyncMock(
+        return_value={
+            "status": "success",
+            "summary": "已编辑 1 张图片",
+        }
+    )
+
+    result = await plugin.openai_edit_image_tool(
+        event,
+        prompt="改成真人版",
+        count=1,
+    )
+
+    event.send.assert_awaited_once()
+    assert "改成真人版" in event._sent_messages[0]
+    assert "正在生成中" in event._sent_messages[0]
+    plugin._execute_edit_flow.assert_awaited_once()
+    assert "已编辑 1 张图片" == result
 
 
 @pytest.mark.asyncio
@@ -566,6 +596,9 @@ async def test_robot_figure_llm_tool_returns_natural_reaction_on_success(
         count=1,
     )
 
+    event.send.assert_awaited_once()
+    assert "画一张机器人头像" in event._sent_messages[0]
+    assert "正在生成中" in event._sent_messages[0]
     plugin._execute_figure_edit_flow.assert_awaited_once()
     enhanced_prompt = plugin._execute_figure_edit_flow.await_args.kwargs["prompt"]
     assert "用户提示词：画一张机器人头像" in enhanced_prompt

@@ -189,10 +189,18 @@ class OpenAIImagePlugin(Star):
         """
         # LLM 调用时可能传递 float 类型（如 1.0），需转为 int
         count = int(count)
+        clean_prompt = str(prompt or "").strip()
+
+        active_count = getattr(self._task_service, "active_tasks", 0) + count
+        await self._send_pending_message(
+            event,
+            prompt=clean_prompt,
+            active_count=active_count,
+        )
 
         result = await self._execute_generate_flow(
             event=event,
-            prompt=str(prompt or "").strip(),
+            prompt=clean_prompt,
             count=count,
             size=None,
             send_user_message=False,
@@ -218,9 +226,17 @@ class OpenAIImagePlugin(Star):
         if extract_first_image_component(event) is None:
             return "未检测到图片，请在当前消息中携带图片或回复一张图片后再调用图片编辑工具。"
 
+        clean_prompt = str(prompt or "").strip()
+        active_count = getattr(self._task_service, "active_tasks", 0) + count
+        await self._send_pending_message(
+            event,
+            prompt=clean_prompt,
+            active_count=active_count,
+        )
+
         result = await self._execute_edit_flow(
             event=event,
-            prompt=str(prompt or "").strip(),
+            prompt=clean_prompt,
             count=count,
             size=None,
             send_user_message=False,
@@ -258,10 +274,19 @@ class OpenAIImagePlugin(Star):
                 "尚未设置机器人形象图，请先回复或发送一张图片并使用 /oaifigure 设置。"
             )
 
+        clean_prompt = str(prompt or "").strip()
+        parsed_count = int(count)
+        active_count = getattr(self._task_service, "active_tasks", 0) + parsed_count
+        await self._send_pending_message(
+            event,
+            prompt=clean_prompt,
+            active_count=active_count,
+        )
+
         result = await self._execute_figure_edit_flow(
             event=event,
-            prompt=self._build_robot_figure_edit_prompt(prompt),
-            count=int(count),
+            prompt=self._build_robot_figure_edit_prompt(clean_prompt),
+            count=parsed_count,
             size=size,
             quality=quality,
             moderation=moderation,
@@ -1545,11 +1570,14 @@ class OpenAIImagePlugin(Star):
     ) -> None:
         """在耗时图片任务开始前发送用户可见提示，避免命令长时间静默。"""
 
-        await event.send(
-            event.plain_result(
-                self._build_pending_message(prompt, active_count=active_count)
+        try:
+            await event.send(
+                event.plain_result(
+                    self._build_pending_message(prompt, active_count=active_count)
+                )
             )
-        )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[OpenAIImage] 发送任务启动提示失败: %s", exc)
 
     def _build_pending_message(
         self, prompt: str, active_count: int | None = None
