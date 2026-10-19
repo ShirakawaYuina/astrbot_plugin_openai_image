@@ -620,6 +620,9 @@ def test_build_robot_figure_edit_prompt_encourages_scene_specific_variation():
     )
 
     assert "保持角色核心身份" in prompt
+    assert "场景" in prompt
+    assert "构图" in prompt
+    assert "光影" in prompt
     assert "表情" in prompt
     assert "动作" in prompt
     assert "姿态" in prompt
@@ -1069,25 +1072,20 @@ def test_llm_tool_docstring_declares_args_for_prompt_and_options():
         module.OpenAIImagePlugin.openai_edit_robot_figure_image_tool.__doc__ or ""
     )
 
-    assert "Args:" in generate_doc
-    assert "prompt(string)" in generate_doc
-    assert "count(number)" in generate_doc
-    assert "use_english_enhancement" not in generate_doc
-    assert "英文" in generate_doc
-    assert "English prompt" in generate_doc
+    for doc in (generate_doc, edit_doc, figure_doc):
+        assert "Args:" in doc
+        assert "prompt(string)" in doc
+        assert "count(number)" in doc
+        assert "use_english_enhancement" not in doc
+        assert "英文" in doc
+        assert "English prompt" in doc
+        assert "场景" in doc
+        assert "构图" in doc
+        assert "光影" in doc
+        assert "动作" in doc
+        assert "表情" in doc
 
-    assert "Args:" in edit_doc
-    assert "prompt(string)" in edit_doc
-    assert "count(number)" in edit_doc
-    assert "use_english_enhancement" not in edit_doc
-    assert "英文" in edit_doc
-    assert "English prompt" in edit_doc
-
-    assert "Args:" in figure_doc
-    assert "prompt(string)" in figure_doc
     assert "机器人形象" in figure_doc
-    assert "英文" in figure_doc
-    assert "English prompt" in figure_doc
 
 
 def test_plugin_registers_command_and_tool_names():

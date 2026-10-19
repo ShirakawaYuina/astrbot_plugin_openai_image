@@ -181,10 +181,10 @@ class OpenAIImagePlugin(Star):
         prompt: str,
         count: int = 1,
     ) -> str:
-        """供 LLM 调用的文生图工具。无论用户使用何种语言，必须将用户的生图需求扩写并翻译为高质量英文提示词（English prompt only）传入。
+        """供 LLM 调用的文生图工具。无论用户使用何种语言，必须将用户的生图需求扩写并翻译为高质量英文提示词（English prompt only）传入。提示词必须对场景（环境背景、空间氛围）、构图（视角镜头、景深与构图方式）、光影（光源方向、明暗对比与光效氛围）、动作（主体姿态、动作动态与肢体语言）以及表情（面部神态、视线与情绪表达）进行丰富且具体的细致描绘。
 
         Args:
-            prompt(string): 高质量英文图片生成提示词（English prompt only）。必须将用户的画面构想翻译并扩写为生动详细的英文描述，严禁传入中文。
+            prompt(string): 高质量英文图片生成提示词（English prompt only）。必须将用户的画面构想翻译并扩写为具体的英文画面描述，对场景背景（scene/environment）、构图视角（composition/camera angle）、光影明暗（lighting/shadows/atmosphere）、动作姿态（action/pose/movement）与表情神态（facial expression/emotion）均有具体生动的细致描绘，严禁传入中文。
             count(number): 生成图片数量，默认 1。
         """
         # LLM 调用时可能传递 float 类型（如 1.0），需转为 int
@@ -214,10 +214,10 @@ class OpenAIImagePlugin(Star):
         prompt: str,
         count: int = 1,
     ) -> str:
-        """供 LLM 调用的图片编辑工具。无论用户使用何种语言，必须将用户的图片修改需求翻译并扩写为高质量英文提示词（English prompt only）传入。
+        """供 LLM 调用的图片编辑工具。无论用户使用何种语言，必须将用户的图片修改需求翻译并扩写为高质量英文提示词（English prompt only）传入。提示词必须对修改后画面的场景环境、构图调整、光影变化、主体新动作与面部新表情等细节进行具体描绘。
 
         Args:
-            prompt(string): 英文图片编辑与修改提示词（English prompt only）。详细描述需要对输入图片进行的修改、新增或替换元素，严禁传入中文。
+            prompt(string): 英文图片编辑与修改提示词（English prompt only）。详细具体地描述需要对原图进行的修改与调整，包括场景环境（scene/background）、构图视角（composition）、光影氛围（lighting/shadows）、动作姿势（action/pose）及表情神态（facial expression/emotion）的具体变化，严禁传入中文。
             count(number): 生成图片数量，默认 1。
         """
         # LLM 调用时可能传递 float 类型（如 1.0），需转为 int
@@ -257,12 +257,12 @@ class OpenAIImagePlugin(Star):
 
         当用户要求生成、编辑或查看机器人自己、Bot 形象、助手形象、看板娘、
         机器人头像、机器人立绘、机器人表情包等与机器人有关的图像时调用。
-        生成时应鼓励图像模型根据提示词调整表情、动作、姿态和服装，避免机器人形象单一化。
-        无论用户使用何种语言，必须将具体的场景、表情、动作、姿态和服装等构想翻译并扩写为高质量英文提示词（English prompt only）传入。
+        生成时应鼓励图像模型根据提示词调整场景、构图、光影、表情、动作、姿态和服装，避免机器人形象单一化。
+        无论用户使用何种语言，必须将具体的场景环境、构图视角、光影氛围、肢体动作与生动表情等构想翻译并扩写为高质量英文提示词（English prompt only）传入。
         工具成功后应以机器人本人看到新形象的自然反应回复，不要描述工具执行过程。
 
         Args:
-            prompt(string): 基于机器人形象参考图进行编辑的高质量英文提示词（English prompt only）。详细描述新场景下的表情、动作、姿态与服装，严禁传入中文。
+            prompt(string): 基于机器人形象参考图进行编辑的高质量英文提示词（English prompt only）。必须对新场景环境（scene/environment）、构图视角（composition）、光影明暗（lighting/shadows）、动作姿态（action/pose）与表情神态（facial expression/emotion）有具体生动的细致描绘，严禁传入中文。
             count(number): 生成图片数量，默认 1。
             size(string): 可选输出尺寸，例如 auto、1024x1024、portrait。
             quality(string): 可选质量，auto、low、medium、high。
@@ -1174,16 +1174,16 @@ class OpenAIImagePlugin(Star):
 
     @staticmethod
     def _build_robot_figure_edit_prompt(prompt: str) -> str:
-        """构建机器人形象图工具专用提示词，强化表情、动作和服装的多样化。"""
+        """构建机器人形象图工具专用提示词，强化场景、构图、光影、表情、动作和服装的多样化。"""
 
         clean_prompt = str(prompt or "").strip()
         return (
             "请以提供的形象参考图为基础生成新图，保持角色核心身份、脸部识别特征、"
             "发型/轮廓/主要配色等关键设定一致。"
-            "同时必须根据用户提示词主动设计贴合场景的表情、动作、姿态、视线、肢体语言和服装，"
+            "同时必须根据用户提示词主动设计贴合设定的场景环境、构图视角、光影氛围、表情神态、动作姿态、视线、肢体语言和服装，"
             "服装可以随主题、职业、季节、活动或情绪变化而变化。"
             "避免总是生成正脸站立、微笑、静态半身、相同手势或相同服装；"
-            "画面应体现提示词中的情绪和事件，让角色看起来正在自然参与该场景。"
+            "画面应体现提示词中的场景空间、构图层次、光影氛围、角色情绪和事件，让角色看起来正在自然参与该场景。"
             f"\n\n用户提示词：{clean_prompt}"
         )
 
