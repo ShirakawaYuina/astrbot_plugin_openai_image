@@ -1073,15 +1073,21 @@ def test_llm_tool_docstring_declares_args_for_prompt_and_options():
     assert "prompt(string)" in generate_doc
     assert "count(number)" in generate_doc
     assert "use_english_enhancement" not in generate_doc
+    assert "英文" in generate_doc
+    assert "English prompt" in generate_doc
 
     assert "Args:" in edit_doc
     assert "prompt(string)" in edit_doc
     assert "count(number)" in edit_doc
     assert "use_english_enhancement" not in edit_doc
+    assert "英文" in edit_doc
+    assert "English prompt" in edit_doc
 
     assert "Args:" in figure_doc
     assert "prompt(string)" in figure_doc
     assert "机器人形象" in figure_doc
+    assert "英文" in figure_doc
+    assert "English prompt" in figure_doc
 
 
 def test_plugin_registers_command_and_tool_names():

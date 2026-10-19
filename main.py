@@ -181,10 +181,10 @@ class OpenAIImagePlugin(Star):
         prompt: str,
         count: int = 1,
     ) -> str:
-        """供 LLM 调用的文生图工具。
+        """供 LLM 调用的文生图工具。无论用户使用何种语言，必须将用户的生图需求扩写并翻译为高质量英文提示词（English prompt only）传入。
 
         Args:
-            prompt(string): 图片生成提示词。
+            prompt(string): 高质量英文图片生成提示词（English prompt only）。必须将用户的画面构想翻译并扩写为生动详细的英文描述，严禁传入中文。
             count(number): 生成图片数量，默认 1。
         """
         # LLM 调用时可能传递 float 类型（如 1.0），需转为 int
@@ -214,10 +214,10 @@ class OpenAIImagePlugin(Star):
         prompt: str,
         count: int = 1,
     ) -> str:
-        """供 LLM 调用的图片编辑工具。
+        """供 LLM 调用的图片编辑工具。无论用户使用何种语言，必须将用户的图片修改需求翻译并扩写为高质量英文提示词（English prompt only）传入。
 
         Args:
-            prompt(string): 图片编辑提示词。
+            prompt(string): 英文图片编辑与修改提示词（English prompt only）。详细描述需要对输入图片进行的修改、新增或替换元素，严禁传入中文。
             count(number): 生成图片数量，默认 1。
         """
         # LLM 调用时可能传递 float 类型（如 1.0），需转为 int
@@ -258,10 +258,11 @@ class OpenAIImagePlugin(Star):
         当用户要求生成、编辑或查看机器人自己、Bot 形象、助手形象、看板娘、
         机器人头像、机器人立绘、机器人表情包等与机器人有关的图像时调用。
         生成时应鼓励图像模型根据提示词调整表情、动作、姿态和服装，避免机器人形象单一化。
+        无论用户使用何种语言，必须将具体的场景、表情、动作、姿态和服装等构想翻译并扩写为高质量英文提示词（English prompt only）传入。
         工具成功后应以机器人本人看到新形象的自然反应回复，不要描述工具执行过程。
 
         Args:
-            prompt(string): 基于机器人形象参考图进行编辑的提示词。
+            prompt(string): 基于机器人形象参考图进行编辑的高质量英文提示词（English prompt only）。详细描述新场景下的表情、动作、姿态与服装，严禁传入中文。
             count(number): 生成图片数量，默认 1。
             size(string): 可选输出尺寸，例如 auto、1024x1024、portrait。
             quality(string): 可选质量，auto、low、medium、high。
