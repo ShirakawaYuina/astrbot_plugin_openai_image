@@ -41,7 +41,7 @@ from .core.utils.image_extract import (
     extract_first_image_component,
     extract_image_components,
 )
-from .core.web_api import ImageStudioApi
+from .core.web_api import ImageStudioApi, optimize_prompt_text
 
 PLUGIN_NAME = "astrbot_plugin_openai_image"
 FIGURE_IMAGE_DIR_NAME = "figure"
@@ -331,17 +331,21 @@ class OpenAIImagePlugin(Star):
             await event.send(event.plain_result(f"参数错误：{exc}"))
             return
 
+        final_prompt = await self._maybe_optimize_command_prompt(
+            parsed_command.prompt, mode="generate"
+        )
+
         active_count = (
             getattr(self._task_service, "active_tasks", 0) + parsed_command.count
         )
         await self._send_pending_message(
             event,
-            prompt=parsed_command.prompt,
+            prompt=final_prompt,
             active_count=active_count,
         )
         await self._execute_generate_flow(
             event=event,
-            prompt=parsed_command.prompt,
+            prompt=final_prompt,
             count=parsed_command.count,
             size=parsed_command.size,
             quality=parsed_command.quality,
@@ -370,6 +374,10 @@ class OpenAIImagePlugin(Star):
                 self._truncate_text(resolved_prompt),
             )
 
+        final_prompt = await self._maybe_optimize_command_prompt(
+            resolved_prompt, mode="edit"
+        )
+
         active_count = (
             getattr(self._task_service, "active_tasks", 0) + parsed_command.count
         )
@@ -377,7 +385,7 @@ class OpenAIImagePlugin(Star):
         if extract_first_image_component(event) is None:
             await self._execute_edit_flow(
                 event=event,
-                prompt=resolved_prompt,
+                prompt=final_prompt,
                 count=parsed_command.count,
                 size=parsed_command.size,
                 quality=parsed_command.quality,
@@ -391,19 +399,19 @@ class OpenAIImagePlugin(Star):
             and extract_first_image_component(event) is not None
         ):
             yield self._build_edit_pending_result(
-                resolved_prompt,
+                final_prompt,
                 active_count=active_count,
             )
         else:
             await self._send_pending_message(
                 event,
-                prompt=resolved_prompt,
+                prompt=final_prompt,
                 active_count=active_count,
             )
 
         await self._execute_edit_flow(
             event=event,
-            prompt=resolved_prompt,
+            prompt=final_prompt,
             count=parsed_command.count,
             size=parsed_command.size,
             quality=parsed_command.quality,
@@ -432,6 +440,10 @@ class OpenAIImagePlugin(Star):
                 self._truncate_text(resolved_prompt),
             )
 
+        final_prompt = await self._maybe_optimize_command_prompt(
+            resolved_prompt, mode="edit"
+        )
+
         qq_id = extract_first_at_target(event)
         if not qq_id:
             await event.send(
@@ -444,13 +456,13 @@ class OpenAIImagePlugin(Star):
         )
         await self._send_pending_message(
             event,
-            prompt=resolved_prompt,
+            prompt=final_prompt,
             active_count=active_count,
         )
         await self._execute_avatar_edit_flow(
             event=event,
             qq_id=qq_id,
-            prompt=resolved_prompt,
+            prompt=final_prompt,
             count=parsed_command.count,
             size=parsed_command.size,
             quality=parsed_command.quality,
@@ -1509,6 +1521,48 @@ class OpenAIImagePlugin(Star):
                 if clean_k and clean_v:
                     mapping[clean_k] = clean_v
         return mapping
+
+    async def _maybe_optimize_command_prompt(
+        self, prompt: str, mode: str = "generate"
+    ) -> str:
+        """若开启了指令提示词优化，则调用配置的对话模型对提示词进行扩写优化。
+
+        Args:
+            prompt: 原始或已替换预设的提示词。
+            mode: 任务模式，"generate" 或 "edit"。
+
+        Returns:
+            优化后的提示词；未开启或优化失败时返回原提示词。
+        """
+        clean_prompt = str(prompt or "").strip()
+        if not clean_prompt:
+            return clean_prompt
+
+        if not bool(self.config.get("enable_command_prompt_optimization", False)):
+            return clean_prompt
+
+        provider_id = str(
+            self.config.get("command_prompt_optimizer_provider_id", "") or ""
+        ).strip()
+        try:
+            optimized = await optimize_prompt_text(
+                context=self.context,
+                provider_id=provider_id,
+                prompt=clean_prompt,
+                mode=mode,
+            )
+            logger.info(
+                "[OpenAIImage][optimize] 指令提示词已优化: before=%s after=%s",
+                self._truncate_text(clean_prompt),
+                self._truncate_text(optimized),
+            )
+            return optimized
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[OpenAIImage][optimize] 指令提示词优化失败，继续使用原提示词: %s",
+                exc,
+            )
+            return clean_prompt
 
     def _log_task_result(
         self,

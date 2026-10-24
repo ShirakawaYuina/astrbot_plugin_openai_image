@@ -475,18 +475,20 @@ def _resolve_optimizer_provider(context: Any, provider_id: str) -> Any:
 async def optimize_prompt_text(
     *,
     context: Any = None,
-    settings_store: PromptOptimizerSettingsStore,
+    provider_id: str | None = None,
+    settings_store: PromptOptimizerSettingsStore | None = None,
     prompt: str,
     mode: str,
 ) -> str:
     """调用 AstrBot 的模型提供商扩写提示词。
 
-    页面只负责把当前输入发送给优化模型，并把纯文本结果回填到输入框；
+    页面与指令都可调用此接口将输入发送给优化模型；
     未找到可用模型、接口请求失败或响应结构不可用时都会抛出明确异常。
 
     Args:
         context: AstrBot 上下文对象。
-        settings_store: 页面设置 Tab 维护的提示词优化配置存储。
+        provider_id: 可选直接指定的对话提供商 ID。
+        settings_store: 可选的提示词优化配置存储（WebUI 设置使用）。
         prompt: 用户当前输入的提示词。
         mode: 任务类型，取值 generate 或 edit。
 
@@ -502,7 +504,12 @@ async def optimize_prompt_text(
     if not clean_prompt:
         raise ValueError("提示词不能为空")
 
-    provider = _resolve_optimizer_provider(context, settings_store.get_provider_id())
+    target_provider_id = (
+        provider_id
+        if provider_id is not None
+        else (settings_store.get_provider_id() if settings_store else "")
+    )
+    provider = _resolve_optimizer_provider(context, target_provider_id)
     if not provider:
         raise RuntimeError("未找到可用的 AstrBot 对话模型提供商，请先在 AstrBot 设置中配置模型")
 

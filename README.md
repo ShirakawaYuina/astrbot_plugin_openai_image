@@ -120,6 +120,13 @@
 - 支持配置多组触发词（`keyword`）与对应的预设提示词（`preset_prompt`）。
 - 当用户在聊天中使用编辑命令（如 `/oaiedit <提示词>`、`/oaiqlogo @用户 <提示词>`）时，若输入的提示词命中了配置中的触发词（忽略首尾空格、标点与英文大小写），将自动替换为对应的预设提示词后再发起图片编辑请求。
 
+### 6. 指令调用提示词优化
+
+可在插件配置中开启「指令提示词优化」（`enable_command_prompt_optimization`）：
+- **生效范围**：仅对指令调用生效（`/oaiimg`、`/oaiedit`、`/oaiqlogo` 等），LLM 工具自主生图不受此项影响。
+- **工作机制**：开启后，用户输入简要提示词，插件会先调用指定对话大模型将其自动扩写并翻译为包含场景、构图、光影、动作、表情等丰富细节的高质量提示词，再提交图像生成与编辑。
+- **自定义模型**：可在「指令提示词优化模型」（`command_prompt_optimizer_provider_id`）中自由选取已在 AstrBot 中配置的任意对话大模型提供商（如 OpenAI、Claude、DeepSeek 等）；留空时自动使用 AstrBot 当前默认启用的对话模型。
+
 ## 机器人形象图
 
 使用 `/oaifigure` 设置机器人形象图，使用 `/oaishow` 查看当前已设置的形象图。形象图会保存到 `data/plugin_data/astrbot_plugin_openai_image/figure/robot_figure.png`，重复设置会覆盖旧图。

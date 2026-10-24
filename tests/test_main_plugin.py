@@ -1669,5 +1669,100 @@ def test_conf_schema_defines_edit_prompt_presets():
     assert "preset_prompt" in templates["preset"]["items"]
 
 
+@pytest.mark.asyncio
+async def test_maybe_optimize_command_prompt_disabled_by_default():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    with patch.object(module, "optimize_prompt_text", new_callable=AsyncMock) as mock_opt:
+        result = await plugin._maybe_optimize_command_prompt("一只可爱的小狗", mode="generate")
+        assert result == "一只可爱的小狗"
+        mock_opt.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_maybe_optimize_command_prompt_enabled_calls_optimizer():
+    module = _load_module()
+    mock_context = SimpleNamespace()
+    plugin = module.OpenAIImagePlugin(
+        context=mock_context,
+        config={
+            "enable_command_prompt_optimization": True,
+            "command_prompt_optimizer_provider_id": "custom_provider",
+        },
+    )
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        return_value="a cute puppy in cinematic lighting, 8k",
+    ) as mock_opt:
+        result = await plugin._maybe_optimize_command_prompt("一只可爱的小狗", mode="generate")
+        assert result == "a cute puppy in cinematic lighting, 8k"
+        mock_opt.assert_awaited_once_with(
+            context=mock_context,
+            provider_id="custom_provider",
+            prompt="一只可爱的小狗",
+            mode="generate",
+        )
+
+
+@pytest.mark.asyncio
+async def test_maybe_optimize_command_prompt_fallback_on_error():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={"enable_command_prompt_optimization": True},
+    )
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("LLM service unavailable"),
+    ):
+        result = await plugin._maybe_optimize_command_prompt("一只可爱的小狗", mode="generate")
+        assert result == "一只可爱的小狗"
+
+
+@pytest.mark.asyncio
+async def test_handle_generate_command_with_prompt_optimization():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={"enable_command_prompt_optimization": True},
+    )
+    plugin._execute_generate_flow = AsyncMock()
+    event = _make_event(platform_name="other")
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        return_value="photorealistic red sports car on highway at dusk",
+    ):
+        await plugin._handle_generate_command(event, raw_prompt="一辆红色跑车")
+
+    plugin._execute_generate_flow.assert_awaited_once()
+    assert (
+        plugin._execute_generate_flow.await_args.kwargs["prompt"]
+        == "photorealistic red sports car on highway at dusk"
+    )
+    event.send.assert_awaited_once()
+    assert "photorealistic red sports car on highway at dusk" in event._sent_messages[0]
+
+
+def test_conf_schema_defines_command_prompt_optimization():
+    import json
+
+    schema = json.loads((ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
+    assert "enable_command_prompt_optimization" in schema
+    assert schema["enable_command_prompt_optimization"]["type"] == "bool"
+    assert schema["enable_command_prompt_optimization"]["default"] is False
+
+    assert "command_prompt_optimizer_provider_id" in schema
+    assert schema["command_prompt_optimizer_provider_id"]["type"] == "string"
+    assert schema["command_prompt_optimizer_provider_id"]["_special"] == "select_provider"
+
+
+
 
 
