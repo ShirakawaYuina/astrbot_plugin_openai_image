@@ -44,9 +44,11 @@ PROMPT_OPTIMIZER_MODE_LABELS = {
     "edit": "图片编辑",
 }
 PROMPT_OPTIMIZER_SYSTEM_PROMPT = (
-    "你是专业的图像生成提示词优化师。请把用户的提示词扩写为更适合图像模型理解的高质量英文提示词，"
-    "对画面的场景、构图、光影、动作、表情、主体细节与氛围质感进行丰富具体的细致描绘。必须保留用户原始意图，"
-    "不要添加与原意冲突的元素，不要输出解释、标题、编号或 Markdown，只输出优化后的英文提示词正文。"
+    "你是专业的图像生成提示词优化师。你的任务是将用户的提示词扩写并翻译为用于生图的高质量纯英文提示词（English prompt only）。\n"
+    "【核心准则】\n"
+    "1. 语言必须全为英文：最终输出结果必须全部为英文，严禁输出任何中文字符、拼音或中文标点（No Chinese characters allowed）。所有画面意图必须完整翻译并扩写为英文描述。\n"
+    "2. 画面要素细致描绘：对画面的场景（scene/environment）、构图（composition/framing）、光影（lighting/shadows）、主体动作（action/pose）以及表情神态（expression/emotion）进行生动具体的细致描绘。\n"
+    "3. 保持纯净：不要输出任何前言、问候、解释、翻译对照、标题、编号或 Markdown 代码块，仅输出最终的纯英文提示词正文。"
 )
 
 
@@ -525,6 +527,77 @@ def _ensure_generate_aspect_ratio(
     return f"{stripped}, aspect ratio {ratio}"
 
 
+def _clean_english_prompt(text: str) -> str:
+    """清理提示词中可能包含的引导语或说明，确保输出纯英文提示词。
+
+    Args:
+        text: 优化模型返回的原始文本。
+
+    Returns:
+        清理规范化后的英文提示词文本。
+    """
+    clean_text = str(text or "").strip()
+    if not clean_text:
+        return clean_text
+
+    # 去除 Markdown 围栏代码块
+    if clean_text.startswith("```"):
+        clean_text = re.sub(r"^```[a-zA-Z0-9_-]*\s*\n?", "", clean_text).strip()
+    if clean_text.endswith("```"):
+        clean_text = re.sub(r"\n?\s*```$", "", clean_text).strip()
+
+    has_english = bool(re.search(r"[a-zA-Z]", clean_text))
+
+    lines = clean_text.splitlines()
+    filtered_lines: list[str] = []
+    for line in lines:
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("```"):
+            continue
+        # 若已有英文主体，跳过纯中文前导说明行或括号尾注行
+        if has_english and re.match(r"^[\u4e00-\u9fff\s：:，。!！、\-\*（）()【】\[\]]+$", s):
+            continue
+        # 跳过常见的英文引导标签前缀（如 "Prompt:", "Here is the prompt:"）
+        s = re.sub(
+            r"^(here\s+(is|are)\s+.*?:|prompt\s*:|optimized\s+prompt\s*:)\s*",
+            "",
+            s,
+            flags=re.IGNORECASE,
+        ).strip()
+        if s:
+            filtered_lines.append(s)
+
+    result = " ".join(filtered_lines).strip() if filtered_lines else clean_text
+
+    # 若文本中已包含英文内容，去除前导或末尾残留的纯中文字符
+    if re.search(r"[a-zA-Z]", result):
+        result = re.sub(r"^[\u4e00-\u9fff\s：:，。、]+", "", result).strip()
+        result = re.sub(r"[\u4e00-\u9fff\s]+$", "", result).strip()
+
+        # 将中文标点转为英文标点
+        trans_table = str.maketrans({
+            "，": ", ",
+            "。": ". ",
+            "：": ": ",
+            "；": "; ",
+            "！": "!",
+            "？": "?",
+            "（": " (",
+            "）": ") ",
+            "【": " [",
+            "】": "] ",
+            "“": '"',
+            "”": '"',
+            "‘": "'",
+            "’": "'",
+        })
+        result = result.translate(trans_table)
+
+    return re.sub(r"\s+", " ", result).strip()
+
+
 async def optimize_prompt_text(
     *,
     context: Any = None,
@@ -550,7 +623,7 @@ async def optimize_prompt_text(
         size: 可选的生成尺寸参数，用于推断默认画面比例。
 
     Returns:
-        优化后的提示词正文。
+        优化后的纯英文提示词正文。
 
     Raises:
         ValueError: 提示词为空。
@@ -579,8 +652,9 @@ async def optimize_prompt_text(
         )
     user_prompt = (
         f"当前任务类型：{mode_label}\n"
-        "请优化以下提示词，使其更具体、更适合图像模型执行：\n"
-        f"{clean_prompt}"
+        "请将以下提示词扩写并翻译为用于生图的高质量纯英文提示词（English prompt only）：\n"
+        f"{clean_prompt}\n"
+        "【语言要求】：最终输出必须全部为英文，严禁包含任何中文字符、拼音或解释性说明，直接输出纯英文提示词正文。"
         f"{ratio_requirement}"
     )
 
@@ -596,14 +670,37 @@ async def optimize_prompt_text(
         error_msg = getattr(response, "completion_text", "") or "模型生成失败"
         raise RuntimeError(f"提示词优化失败: {error_msg}")
 
-    optimized_prompt = str(getattr(response, "completion_text", "") or "").strip()
-    if optimized_prompt.startswith("```") and optimized_prompt.endswith("```"):
-        lines = optimized_prompt.splitlines()
-        if len(lines) >= 2:
-            optimized_prompt = "\n".join(lines[1:-1]).strip()
+    optimized_prompt = _clean_english_prompt(
+        str(getattr(response, "completion_text", "") or "").strip()
+    )
 
     if not optimized_prompt:
         raise RuntimeError("提示词优化接口未返回可用文本")
+
+    # 若模型返回内容仍包含中文，尝试单次翻译为纯英文
+    if re.search(r"[\u4e00-\u9fff]", optimized_prompt):
+        try:
+            trans_prompt = (
+                "Translate the following image prompt into English only. "
+                "Output ONLY the plain English translation, without any Chinese characters, notes, or explanations:\n"
+                f"{optimized_prompt}"
+            )
+            trans_response = await provider.text_chat(
+                prompt=trans_prompt,
+                system_prompt="You are a professional translator. Translate all text into pure English. Never output any Chinese.",
+            )
+            trans_text = str(getattr(trans_response, "completion_text", "") or "").strip()
+            if trans_text and getattr(trans_response, "role", None) != "err":
+                cleaned_trans = _clean_english_prompt(trans_text)
+                if not re.search(r"[\u4e00-\u9fff]", cleaned_trans):
+                    optimized_prompt = cleaned_trans
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[OpenAIImage][optimize] 提示词二次英文翻译失败: %s", exc)
+
+    # 若文本中已含英文但夹杂生僻中文字符，剥离中文字符确保全英
+    if re.search(r"[a-zA-Z]", optimized_prompt) and re.search(r"[\u4e00-\u9fff]", optimized_prompt):
+        optimized_prompt = re.sub(r"[\u4e00-\u9fff]+", "", optimized_prompt).strip()
+        optimized_prompt = re.sub(r"\s+", " ", optimized_prompt).strip()
 
     if require_aspect_ratio:
         optimized_prompt = _ensure_generate_aspect_ratio(

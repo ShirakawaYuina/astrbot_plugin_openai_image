@@ -671,7 +671,7 @@ async def test_optimize_prompt_text_calls_provider_text_chat(tmp_path: Path):
             chat_called["system_prompt"] = system_prompt
             return SimpleNamespace(
                 role="assistant",
-                completion_text="```\n湖边晨雾中的木屋，电影质感光影\n```",
+                completion_text="```\nA photorealistic wooden cabin in morning mist by the lake, cinematic lighting\n```",
             )
 
     provider = FakeProvider()
@@ -689,7 +689,7 @@ async def test_optimize_prompt_text_calls_provider_text_chat(tmp_path: Path):
         mode="generate",
     )
 
-    assert result == "湖边晨雾中的木屋，电影质感光影"
+    assert result == "A photorealistic wooden cabin in morning mist by the lake, cinematic lighting"
     assert "当前任务类型：文生图" in chat_called["prompt"]
     assert "湖边木屋" in chat_called["prompt"]
     assert chat_called["system_prompt"] == module.PROMPT_OPTIMIZER_SYSTEM_PROMPT
@@ -702,7 +702,7 @@ async def test_optimize_prompt_text_calls_provider_text_chat(tmp_path: Path):
         prompt="湖边木屋",
         mode="generate",
     )
-    assert result2 == "湖边晨雾中的木屋，电影质感光影"
+    assert result2 == "A photorealistic wooden cabin in morning mist by the lake, cinematic lighting"
 
 
 @pytest.mark.asyncio
@@ -1361,5 +1361,69 @@ async def test_optimize_prompt_text_require_aspect_ratio(tmp_path: Path):
         require_aspect_ratio=False,
     )
     assert res_no_ratio == "Photorealistic mountain lake at dusk"
+
+
+def test_clean_english_prompt_filters_preamble_and_chinese_decorations():
+    module = _load_module()
+    raw = (
+        "好的，这是为您优化后的英文提示词：\n"
+        "```markdown\n"
+        "A cute golden retriever puppy sitting on grass, soft lighting, 8k resolution.\n"
+        "```\n"
+        "（注：光影采用了柔和漫射光）"
+    )
+    cleaned = module._clean_english_prompt(raw)
+    assert cleaned == "A cute golden retriever puppy sitting on grass, soft lighting, 8k resolution."
+    assert "好的" not in cleaned
+    assert "（注" not in cleaned
+
+
+def test_clean_english_prompt_converts_chinese_punctuation():
+    module = _load_module()
+    raw = "A photorealistic cat，running in a green field。Cinematic lighting：golden hour！"
+    cleaned = module._clean_english_prompt(raw)
+    assert cleaned == "A photorealistic cat, running in a green field. Cinematic lighting: golden hour!"
+
+
+@pytest.mark.asyncio
+async def test_optimize_prompt_text_translates_when_model_returns_chinese(tmp_path: Path):
+    module = _load_module()
+    settings_path = tmp_path / "prompt_optimizer_settings.json"
+    store = module.PromptOptimizerSettingsStore(settings_path)
+
+    calls = []
+
+    class TranslatingProvider:
+        async def text_chat(self, prompt, system_prompt):
+            calls.append(prompt)
+            if len(calls) == 1:
+                # 第一次返回了中文提示词
+                return SimpleNamespace(
+                    role="assistant",
+                    completion_text="湖边木屋，晨雾弥漫，电影质感光影",
+                )
+            # 第二次翻译返回了纯英文提示词
+            return SimpleNamespace(
+                role="assistant",
+                completion_text="A wooden cabin by the lake in morning mist, cinematic lighting",
+            )
+
+    provider = TranslatingProvider()
+    context = SimpleNamespace(
+        get_all_providers=lambda: [provider],
+        get_using_provider=lambda: provider,
+        get_provider_by_id=lambda pid: provider,
+    )
+
+    res = await module.optimize_prompt_text(
+        context=context,
+        settings_store=store,
+        prompt="湖边木屋",
+        mode="generate",
+    )
+    assert len(calls) == 2
+    assert "Translate the following image prompt into English only" in calls[1]
+    assert res == "A wooden cabin by the lake in morning mist, cinematic lighting"
+
 
 
