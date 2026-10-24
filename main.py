@@ -362,6 +362,14 @@ class OpenAIImagePlugin(Star):
             await event.send(event.plain_result(f"参数错误：{exc}"))
             return
 
+        resolved_prompt = self._resolve_edit_preset_prompt(parsed_command.prompt)
+        if resolved_prompt != parsed_command.prompt:
+            logger.info(
+                "[OpenAIImage][edit] 提示词命中预设: before=%s after=%s",
+                self._truncate_text(parsed_command.prompt),
+                self._truncate_text(resolved_prompt),
+            )
+
         active_count = (
             getattr(self._task_service, "active_tasks", 0) + parsed_command.count
         )
@@ -369,7 +377,7 @@ class OpenAIImagePlugin(Star):
         if extract_first_image_component(event) is None:
             await self._execute_edit_flow(
                 event=event,
-                prompt=parsed_command.prompt,
+                prompt=resolved_prompt,
                 count=parsed_command.count,
                 size=parsed_command.size,
                 quality=parsed_command.quality,
@@ -383,19 +391,19 @@ class OpenAIImagePlugin(Star):
             and extract_first_image_component(event) is not None
         ):
             yield self._build_edit_pending_result(
-                parsed_command.prompt,
+                resolved_prompt,
                 active_count=active_count,
             )
         else:
             await self._send_pending_message(
                 event,
-                prompt=parsed_command.prompt,
+                prompt=resolved_prompt,
                 active_count=active_count,
             )
 
         await self._execute_edit_flow(
             event=event,
-            prompt=parsed_command.prompt,
+            prompt=resolved_prompt,
             count=parsed_command.count,
             size=parsed_command.size,
             quality=parsed_command.quality,
@@ -416,6 +424,14 @@ class OpenAIImagePlugin(Star):
             await event.send(event.plain_result(f"参数错误：{exc}"))
             return
 
+        resolved_prompt = self._resolve_edit_preset_prompt(parsed_command.prompt)
+        if resolved_prompt != parsed_command.prompt:
+            logger.info(
+                "[OpenAIImage][qlogo] 提示词命中预设: before=%s after=%s",
+                self._truncate_text(parsed_command.prompt),
+                self._truncate_text(resolved_prompt),
+            )
+
         qq_id = extract_first_at_target(event)
         if not qq_id:
             await event.send(
@@ -428,13 +444,13 @@ class OpenAIImagePlugin(Star):
         )
         await self._send_pending_message(
             event,
-            prompt=parsed_command.prompt,
+            prompt=resolved_prompt,
             active_count=active_count,
         )
         await self._execute_avatar_edit_flow(
             event=event,
             qq_id=qq_id,
-            prompt=parsed_command.prompt,
+            prompt=resolved_prompt,
             count=parsed_command.count,
             size=parsed_command.size,
             quality=parsed_command.quality,
@@ -1425,6 +1441,74 @@ class OpenAIImagePlugin(Star):
 
         # AstrBot 的 is_admin 表示 Bot 管理员，不是 QQ 群管理员或群主。
         return bool(event.is_admin())
+
+    def _resolve_edit_preset_prompt(self, prompt: str) -> str:
+        """根据配置的提示词预设映射，检查并替换用户输入的编辑提示词。
+
+        Args:
+            prompt: 用户输入的原始编辑提示词。
+
+        Returns:
+            若命中预设则返回替换后的预设提示词，未命中则返回原提示词。
+        """
+        clean_prompt = str(prompt or "").strip()
+        if not clean_prompt:
+            return clean_prompt
+
+        presets_config = self.config.get("edit_prompt_presets")
+        if not presets_config:
+            return clean_prompt
+
+        mapping = self._extract_edit_prompt_presets(presets_config)
+        key = clean_prompt.casefold()
+        if key in mapping:
+            return mapping[key]
+
+        stripped_key = clean_prompt.strip(" ,.!?;:，。！？；：").casefold()
+        if stripped_key and stripped_key in mapping:
+            return mapping[stripped_key]
+
+        return clean_prompt
+
+    @staticmethod
+    def _extract_edit_prompt_presets(raw_config: Any) -> dict[str, str]:
+        """将多种格式的预设配置解析为标准字典映射。
+
+        Args:
+            raw_config: 插件配置中的预设项数据（支持 template_list 或 dict 格式）。
+
+        Returns:
+            以小写关键字为键、预设提示词为值的映射字典。
+        """
+        mapping: dict[str, str] = {}
+        if isinstance(raw_config, dict):
+            for k, v in raw_config.items():
+                clean_k = str(k or "").strip().casefold()
+                clean_v = str(v or "").strip()
+                if clean_k and clean_v:
+                    mapping[clean_k] = clean_v
+        elif isinstance(raw_config, list):
+            for item in raw_config:
+                if not isinstance(item, dict):
+                    continue
+                k = (
+                    item.get("keyword")
+                    or item.get("key")
+                    or item.get("match")
+                    or ""
+                )
+                v = (
+                    item.get("preset_prompt")
+                    or item.get("preset")
+                    or item.get("prompt")
+                    or item.get("value")
+                    or ""
+                )
+                clean_k = str(k or "").strip().casefold()
+                clean_v = str(v or "").strip()
+                if clean_k and clean_v:
+                    mapping[clean_k] = clean_v
+        return mapping
 
     def _log_task_result(
         self,

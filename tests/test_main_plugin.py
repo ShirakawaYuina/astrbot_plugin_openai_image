@@ -1547,4 +1547,127 @@ async def test_edit_fallback_when_primary_fails(tmp_path: Path):
     fake_fallback_gateway.close.assert_awaited_once()
 
 
+def test_resolve_edit_preset_prompt_with_template_list():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "edit_prompt_presets": [
+                {
+                    "__template_key": "preset",
+                    "keyword": "动漫风",
+                    "preset_prompt": "masterpiece, best quality, anime style illustration",
+                },
+                {
+                    "__template_key": "preset",
+                    "keyword": "真人化",
+                    "preset_prompt": "photorealistic portrait, 8k resolution, cinematic lighting",
+                },
+            ]
+        },
+    )
+
+    assert (
+        plugin._resolve_edit_preset_prompt("动漫风")
+        == "masterpiece, best quality, anime style illustration"
+    )
+    assert (
+        plugin._resolve_edit_preset_prompt("真人化")
+        == "photorealistic portrait, 8k resolution, cinematic lighting"
+    )
+    assert plugin._resolve_edit_preset_prompt("未配置词") == "未配置词"
+
+
+def test_resolve_edit_preset_prompt_with_dict():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "edit_prompt_presets": {
+                "赛博朋克": "cyberpunk city style, neon lights, futuristic armor",
+            }
+        },
+    )
+
+    assert (
+        plugin._resolve_edit_preset_prompt("赛博朋克")
+        == "cyberpunk city style, neon lights, futuristic armor"
+    )
+    # 大小写与标点容错
+    assert (
+        plugin._resolve_edit_preset_prompt("赛博朋克。")
+        == "cyberpunk city style, neon lights, futuristic armor"
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_edit_command_replaces_preset_prompt():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "edit_prompt_presets": [
+                {
+                    "keyword": "动漫风",
+                    "preset_prompt": "anime style, highly detailed",
+                }
+            ]
+        },
+    )
+    plugin._execute_edit_flow = AsyncMock()
+    event = _make_event(
+        platform_name="other",
+        message_components=[SimpleNamespace(type="image", file="demo.png")],
+    )
+
+    await _collect_asyncgen(
+        plugin._handle_edit_command(event, raw_prompt="动漫风")
+    )
+
+    plugin._execute_edit_flow.assert_awaited_once()
+    assert plugin._execute_edit_flow.await_args.kwargs["prompt"] == "anime style, highly detailed"
+    event.send.assert_awaited_once()
+    assert "anime style, highly detailed" in event._sent_messages[0]
+
+
+@pytest.mark.asyncio
+async def test_handle_qlogo_command_replaces_preset_prompt():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "edit_prompt_presets": {
+                "头像卡通化": "cute cartoon avatar, vibrant colors, 3d render",
+            }
+        },
+    )
+    plugin._execute_avatar_edit_flow = AsyncMock()
+    event = _make_event(
+        message_components=[SimpleNamespace(type="at", qq="999888")]
+    )
+
+    await plugin._handle_qlogo_command(event, raw_prompt="头像卡通化")
+
+    plugin._execute_avatar_edit_flow.assert_awaited_once()
+    assert (
+        plugin._execute_avatar_edit_flow.await_args.kwargs["prompt"]
+        == "cute cartoon avatar, vibrant colors, 3d render"
+    )
+    event.send.assert_awaited_once()
+    assert "cute cartoon avatar, vibrant colors, 3d render" in event._sent_messages[0]
+
+
+def test_conf_schema_defines_edit_prompt_presets():
+    import json
+
+    schema = json.loads((ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
+    assert "edit_prompt_presets" in schema
+    assert schema["edit_prompt_presets"]["type"] == "template_list"
+    templates = schema["edit_prompt_presets"]["templates"]
+    assert "preset" in templates
+    assert "keyword" in templates["preset"]["items"]
+    assert "preset_prompt" in templates["preset"]["items"]
+
+
+
 

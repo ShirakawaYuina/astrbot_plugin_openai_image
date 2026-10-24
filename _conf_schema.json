@@ -68,5 +68,31 @@
         "type": "int",
         "default": 50,
         "hint": "超过数量后会自动清理最旧缓存。"
+    },
+    "edit_prompt_presets": {
+        "description": "编辑命令提示词预设替换",
+        "type": "template_list",
+        "default": [],
+        "hint": "配置多组编辑提示词映射。当用户使用图片编辑命令（如 /oaiedit、/oaiqlogo）时，若输入的提示词命中了配置中的匹配词，则自动替换为对应的预设提示词。",
+        "templates": {
+            "preset": {
+                "name": "提示词预设",
+                "display_item": "keyword",
+                "items": {
+                    "keyword": {
+                        "description": "匹配词",
+                        "type": "string",
+                        "default": "",
+                        "hint": "用户在编辑命令中输入的触发词（例如：动漫风、真人化、换背景）"
+                    },
+                    "preset_prompt": {
+                        "description": "预设提示词",
+                        "type": "text",
+                        "default": "",
+                        "hint": "匹配成功后自动替换为此预设提示词（可填写长文本详细描述）"
+                    }
+                }
+            }
+        }
     }
 }
