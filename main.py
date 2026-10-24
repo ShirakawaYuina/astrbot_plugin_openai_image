@@ -366,17 +366,18 @@ class OpenAIImagePlugin(Star):
             await event.send(event.plain_result(f"参数错误：{exc}"))
             return
 
-        resolved_prompt = self._resolve_edit_preset_prompt(parsed_command.prompt)
-        if resolved_prompt != parsed_command.prompt:
+        preset_prompt = self._find_edit_preset_prompt(parsed_command.prompt)
+        if preset_prompt is not None:
             logger.info(
-                "[OpenAIImage][edit] 提示词命中预设: before=%s after=%s",
+                "[OpenAIImage][edit] 提示词命中预设，直通使用预设提示词（跳过优化）: before=%s after=%s",
                 self._truncate_text(parsed_command.prompt),
-                self._truncate_text(resolved_prompt),
+                self._truncate_text(preset_prompt),
             )
-
-        final_prompt = await self._maybe_optimize_command_prompt(
-            resolved_prompt, mode="edit"
-        )
+            final_prompt = preset_prompt
+        else:
+            final_prompt = await self._maybe_optimize_command_prompt(
+                parsed_command.prompt, mode="edit"
+            )
 
         active_count = (
             getattr(self._task_service, "active_tasks", 0) + parsed_command.count
@@ -432,17 +433,18 @@ class OpenAIImagePlugin(Star):
             await event.send(event.plain_result(f"参数错误：{exc}"))
             return
 
-        resolved_prompt = self._resolve_edit_preset_prompt(parsed_command.prompt)
-        if resolved_prompt != parsed_command.prompt:
+        preset_prompt = self._find_edit_preset_prompt(parsed_command.prompt)
+        if preset_prompt is not None:
             logger.info(
-                "[OpenAIImage][qlogo] 提示词命中预设: before=%s after=%s",
+                "[OpenAIImage][qlogo] 提示词命中预设，直通使用预设提示词（跳过优化）: before=%s after=%s",
                 self._truncate_text(parsed_command.prompt),
-                self._truncate_text(resolved_prompt),
+                self._truncate_text(preset_prompt),
             )
-
-        final_prompt = await self._maybe_optimize_command_prompt(
-            resolved_prompt, mode="edit"
-        )
+            final_prompt = preset_prompt
+        else:
+            final_prompt = await self._maybe_optimize_command_prompt(
+                parsed_command.prompt, mode="edit"
+            )
 
         qq_id = extract_first_at_target(event)
         if not qq_id:
@@ -1454,22 +1456,22 @@ class OpenAIImagePlugin(Star):
         # AstrBot 的 is_admin 表示 Bot 管理员，不是 QQ 群管理员或群主。
         return bool(event.is_admin())
 
-    def _resolve_edit_preset_prompt(self, prompt: str) -> str:
-        """根据配置的提示词预设映射，检查并替换用户输入的编辑提示词。
+    def _find_edit_preset_prompt(self, prompt: str) -> str | None:
+        """根据配置的提示词预设映射查找对应的预设提示词。
 
         Args:
             prompt: 用户输入的原始编辑提示词。
 
         Returns:
-            若命中预设则返回替换后的预设提示词，未命中则返回原提示词。
+            若命中预设则返回对应的预设提示词，未命中则返回 None。
         """
         clean_prompt = str(prompt or "").strip()
         if not clean_prompt:
-            return clean_prompt
+            return None
 
         presets_config = self.config.get("edit_prompt_presets")
         if not presets_config:
-            return clean_prompt
+            return None
 
         mapping = self._extract_edit_prompt_presets(presets_config)
         key = clean_prompt.casefold()
@@ -1480,7 +1482,19 @@ class OpenAIImagePlugin(Star):
         if stripped_key and stripped_key in mapping:
             return mapping[stripped_key]
 
-        return clean_prompt
+        return None
+
+    def _resolve_edit_preset_prompt(self, prompt: str) -> str:
+        """根据配置的提示词预设映射，检查并替换用户输入的编辑提示词。
+
+        Args:
+            prompt: 用户输入的原始编辑提示词。
+
+        Returns:
+            若命中预设则返回替换后的预设提示词，未命中则返回原提示词。
+        """
+        matched = self._find_edit_preset_prompt(prompt)
+        return matched if matched is not None else str(prompt or "").strip()
 
     @staticmethod
     def _extract_edit_prompt_presets(raw_config: Any) -> dict[str, str]:

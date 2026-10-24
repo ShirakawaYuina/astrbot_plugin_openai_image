@@ -1657,6 +1657,76 @@ async def test_handle_qlogo_command_replaces_preset_prompt():
     assert "cute cartoon avatar, vibrant colors, 3d render" in event._sent_messages[0]
 
 
+@pytest.mark.asyncio
+async def test_handle_edit_command_skips_optimization_when_preset_matched():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "enable_command_prompt_optimization": True,
+            "edit_prompt_presets": [
+                {
+                    "keyword": "动漫风",
+                    "preset_prompt": "anime style, highly detailed",
+                }
+            ],
+        },
+    )
+    plugin._execute_edit_flow = AsyncMock()
+    event = _make_event(
+        platform_name="other",
+        message_components=[SimpleNamespace(type="image", file="demo.png")],
+    )
+
+    with patch.object(module, "optimize_prompt_text", new_callable=AsyncMock) as mock_opt:
+        await _collect_asyncgen(
+            plugin._handle_edit_command(event, raw_prompt="动漫风")
+        )
+
+    mock_opt.assert_not_called()
+    plugin._execute_edit_flow.assert_awaited_once()
+    assert plugin._execute_edit_flow.await_args.kwargs["prompt"] == "anime style, highly detailed"
+
+
+@pytest.mark.asyncio
+async def test_handle_edit_command_optimizes_prompt_when_preset_not_matched():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "enable_command_prompt_optimization": True,
+            "edit_prompt_presets": [
+                {
+                    "keyword": "动漫风",
+                    "preset_prompt": "anime style, highly detailed",
+                }
+            ],
+        },
+    )
+    plugin._execute_edit_flow = AsyncMock()
+    event = _make_event(
+        platform_name="other",
+        message_components=[SimpleNamespace(type="image", file="demo.png")],
+    )
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        return_value="watercolor portrait with delicate washes and textures",
+    ) as mock_opt:
+        await _collect_asyncgen(
+            plugin._handle_edit_command(event, raw_prompt="水彩风")
+        )
+
+    mock_opt.assert_awaited_once()
+    plugin._execute_edit_flow.assert_awaited_once()
+    assert (
+        plugin._execute_edit_flow.await_args.kwargs["prompt"]
+        == "watercolor portrait with delicate washes and textures"
+    )
+
+
 def test_conf_schema_defines_edit_prompt_presets():
     import json
 
