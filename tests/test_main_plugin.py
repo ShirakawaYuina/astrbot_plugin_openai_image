@@ -1773,6 +1773,8 @@ async def test_maybe_optimize_command_prompt_enabled_calls_optimizer():
             provider_id="custom_provider",
             prompt="一只可爱的小狗",
             mode="generate",
+            require_aspect_ratio=False,
+            size=None,
         )
 
 

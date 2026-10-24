@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import mimetypes
+import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -472,6 +473,58 @@ def _resolve_optimizer_provider(context: Any, provider_id: str) -> Any:
     return None
 
 
+def _ensure_generate_aspect_ratio(
+    prompt: str,
+    user_input: str = "",
+    size: str | None = None,
+) -> str:
+    """确保文生图优化后的提示词中包含严格遵循如 1:1、16:9 格式的画面比例。
+
+    Args:
+        prompt: 优化模型生成的提示词文本。
+        user_input: 用户原始输入的提示词文本。
+        size: 可选的生成尺寸参数（如 1024x1024、1792x1024）。
+
+    Returns:
+        包含严格数字画面比例（如 1:1、16:9）的提示词文本。
+    """
+    clean_prompt = str(prompt or "").strip()
+    if not clean_prompt:
+        return clean_prompt
+
+    if re.search(r"\b\d+:\d+\b", clean_prompt):
+        return clean_prompt
+
+    clean_size = str(size or "").strip().lower()
+    if clean_size:
+        match = re.match(r"^(\d+)[x*×](\d+)$", clean_size)
+        if match:
+            w, h = int(match.group(1)), int(match.group(2))
+            if w == h:
+                ratio = "1:1"
+            elif w > h:
+                ratio = "16:9"
+            else:
+                ratio = "9:16"
+        else:
+            ratio = "1:1"
+    else:
+        clean_user = str(user_input or "").lower()
+        if any(k in clean_user for k in ("横", "wide", "landscape", "16:9", "16比9")):
+            ratio = "16:9"
+        elif any(k in clean_user for k in ("竖", "portrait", "9:16", "9比16")):
+            ratio = "9:16"
+        elif any(k in clean_user for k in ("4:3", "4比3")):
+            ratio = "4:3"
+        elif any(k in clean_user for k in ("3:4", "3比4")):
+            ratio = "3:4"
+        else:
+            ratio = "1:1"
+
+    stripped = clean_prompt.rstrip(" ,.，。;；")
+    return f"{stripped}, aspect ratio {ratio}"
+
+
 async def optimize_prompt_text(
     *,
     context: Any = None,
@@ -479,6 +532,8 @@ async def optimize_prompt_text(
     settings_store: PromptOptimizerSettingsStore | None = None,
     prompt: str,
     mode: str,
+    require_aspect_ratio: bool = False,
+    size: str | None = None,
 ) -> str:
     """调用 AstrBot 的模型提供商扩写提示词。
 
@@ -491,6 +546,8 @@ async def optimize_prompt_text(
         settings_store: 可选的提示词优化配置存储（WebUI 设置使用）。
         prompt: 用户当前输入的提示词。
         mode: 任务类型，取值 generate 或 edit。
+        require_aspect_ratio: 是否强制要求提示词包含如 1:1、16:9 等格式的画面比例。
+        size: 可选的生成尺寸参数，用于推断默认画面比例。
 
     Returns:
         优化后的提示词正文。
@@ -514,10 +571,17 @@ async def optimize_prompt_text(
         raise RuntimeError("未找到可用的 AstrBot 对话模型提供商，请先在 AstrBot 设置中配置模型")
 
     mode_label = PROMPT_OPTIMIZER_MODE_LABELS.get(str(mode or "").strip(), "图片生成")
+    ratio_requirement = ""
+    if require_aspect_ratio:
+        ratio_requirement = (
+            "\n特别要求：提示词中必须包含画面比例（aspect ratio），且比例必须严格遵循如 1:1、16:9、9:16、4:3、3:4 等「数字:数字」格式"
+            "（例如 aspect ratio 16:9、aspect ratio 1:1；若用户输入中指定了比例或横竖屏意图，则按原意转换为对应比例；若未指定，则根据画面内容选择最合适的比例，如大场景/风景选择 16:9，人物立绘选择 9:16，常规主体选择 1:1）。"
+        )
     user_prompt = (
         f"当前任务类型：{mode_label}\n"
         "请优化以下提示词，使其更具体、更适合图像模型执行：\n"
         f"{clean_prompt}"
+        f"{ratio_requirement}"
     )
 
     try:
@@ -540,6 +604,12 @@ async def optimize_prompt_text(
 
     if not optimized_prompt:
         raise RuntimeError("提示词优化接口未返回可用文本")
+
+    if require_aspect_ratio:
+        optimized_prompt = _ensure_generate_aspect_ratio(
+            optimized_prompt, user_input=clean_prompt, size=size
+        )
+
     return optimized_prompt
 
 

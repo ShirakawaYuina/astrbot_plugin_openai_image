@@ -332,7 +332,10 @@ class OpenAIImagePlugin(Star):
             return
 
         final_prompt = await self._maybe_optimize_command_prompt(
-            parsed_command.prompt, mode="generate"
+            parsed_command.prompt,
+            mode="generate",
+            require_aspect_ratio=True,
+            size=parsed_command.size,
         )
 
         active_count = (
@@ -1537,13 +1540,19 @@ class OpenAIImagePlugin(Star):
         return mapping
 
     async def _maybe_optimize_command_prompt(
-        self, prompt: str, mode: str = "generate"
+        self,
+        prompt: str,
+        mode: str = "generate",
+        require_aspect_ratio: bool = False,
+        size: str | None = None,
     ) -> str:
         """若开启了指令提示词优化，则调用配置的对话模型对提示词进行扩写优化。
 
         Args:
             prompt: 原始或已替换预设的提示词。
             mode: 任务模式，"generate" 或 "edit"。
+            require_aspect_ratio: 是否强制要求包含严格格式的画面比例（如 1:1、16:9）。
+            size: 可选的生成尺寸参数，用于推断默认画面比例。
 
         Returns:
             优化后的提示词；未开启或优化失败时返回原提示词。
@@ -1564,6 +1573,8 @@ class OpenAIImagePlugin(Star):
                 provider_id=provider_id,
                 prompt=clean_prompt,
                 mode=mode,
+                require_aspect_ratio=require_aspect_ratio,
+                size=size,
             )
             logger.info(
                 "[OpenAIImage][optimize] 指令提示词已优化: before=%s after=%s",

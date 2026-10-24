@@ -1275,3 +1275,91 @@ async def test_webui_edit_uses_webui_selected_provider_independently(tmp_path: P
     assert recorded_calls["prompt"] == "风格迁移"
     assert len(recorded_calls["files"]) == 1
 
+
+def test_ensure_generate_aspect_ratio_preserves_existing():
+    module = _load_module()
+    # 包含 16:9
+    text1 = "A cyber city, cinematic lighting, aspect ratio 16:9"
+    assert module._ensure_generate_aspect_ratio(text1) == text1
+
+    # 包含 1:1
+    text2 = "A cute kitten, 1:1 aspect ratio"
+    assert module._ensure_generate_aspect_ratio(text2) == text2
+
+    # 包含 9:16
+    text3 = "Portrait of a warrior, aspect ratio 9:16"
+    assert module._ensure_generate_aspect_ratio(text3) == text3
+
+
+def test_ensure_generate_aspect_ratio_appends_when_missing():
+    module = _load_module()
+    # 默认 1:1
+    assert (
+        module._ensure_generate_aspect_ratio("A cyber city")
+        == "A cyber city, aspect ratio 1:1"
+    )
+
+    # 横屏输入 -> 16:9
+    assert (
+        module._ensure_generate_aspect_ratio("A cyber city", user_input="赛博朋克城市 横屏")
+        == "A cyber city, aspect ratio 16:9"
+    )
+
+    # 竖屏输入 -> 9:16
+    assert (
+        module._ensure_generate_aspect_ratio("A girl portrait", user_input="少女头像 竖屏")
+        == "A girl portrait, aspect ratio 9:16"
+    )
+
+    # 根据 size 推断 -> 16:9
+    assert (
+        module._ensure_generate_aspect_ratio("A landscape", size="1792x1024")
+        == "A landscape, aspect ratio 16:9"
+    )
+
+
+@pytest.mark.asyncio
+async def test_optimize_prompt_text_require_aspect_ratio(tmp_path: Path):
+    module = _load_module()
+    settings_path = tmp_path / "prompt_optimizer_settings.json"
+    store = module.PromptOptimizerSettingsStore(settings_path)
+
+    chat_called = {}
+
+    class FakeProvider:
+        async def text_chat(self, prompt, system_prompt):
+            chat_called["prompt"] = prompt
+            return SimpleNamespace(
+                role="assistant",
+                completion_text="Photorealistic mountain lake at dusk",
+            )
+
+    provider = FakeProvider()
+    context = SimpleNamespace(
+        get_all_providers=lambda: [provider],
+        get_using_provider=lambda: provider,
+        get_provider_by_id=lambda pid: provider,
+    )
+
+    # require_aspect_ratio=True 时必须带有比例
+    res = await module.optimize_prompt_text(
+        context=context,
+        settings_store=store,
+        prompt="山间湖泊 横屏",
+        mode="generate",
+        require_aspect_ratio=True,
+    )
+    assert "特别要求：提示词中必须包含画面比例" in chat_called["prompt"]
+    assert res == "Photorealistic mountain lake at dusk, aspect ratio 16:9"
+
+    # require_aspect_ratio=False 时不强制追加比例
+    res_no_ratio = await module.optimize_prompt_text(
+        context=context,
+        settings_store=store,
+        prompt="山间湖泊 横屏",
+        mode="generate",
+        require_aspect_ratio=False,
+    )
+    assert res_no_ratio == "Photorealistic mountain lake at dusk"
+
+
