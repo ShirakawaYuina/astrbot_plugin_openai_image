@@ -1567,10 +1567,17 @@ class OpenAIImagePlugin(Star):
         provider_id = str(
             self.config.get("command_prompt_optimizer_provider_id", "") or ""
         ).strip()
+        custom_system_prompt = (
+            str(
+                self.config.get("command_prompt_optimizer_system_prompt", "") or ""
+            ).strip()
+            or None
+        )
         try:
             optimized = await optimize_prompt_text(
                 context=self.context,
                 provider_id=provider_id,
+                system_prompt=custom_system_prompt,
                 prompt=clean_prompt,
                 mode=mode,
                 require_aspect_ratio=require_aspect_ratio,

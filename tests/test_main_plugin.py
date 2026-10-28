@@ -1771,7 +1771,38 @@ async def test_maybe_optimize_command_prompt_enabled_calls_optimizer():
         mock_opt.assert_awaited_once_with(
             context=mock_context,
             provider_id="custom_provider",
+            system_prompt=None,
             prompt="一只可爱的小狗",
+            mode="generate",
+            require_aspect_ratio=False,
+            size=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_maybe_optimize_command_prompt_uses_custom_system_prompt():
+    module = _load_module()
+    mock_context = SimpleNamespace()
+    plugin = module.OpenAIImagePlugin(
+        context=mock_context,
+        config={
+            "enable_command_prompt_optimization": True,
+            "command_prompt_optimizer_system_prompt": "You are a master anime artist.",
+        },
+    )
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        return_value="an anime girl in sunset, 8k",
+    ) as mock_opt:
+        result = await plugin._maybe_optimize_command_prompt("可爱的女孩", mode="generate")
+        assert result == "an anime girl in sunset, 8k"
+        mock_opt.assert_awaited_once_with(
+            context=mock_context,
+            provider_id="",
+            system_prompt="You are a master anime artist.",
+            prompt="可爱的女孩",
             mode="generate",
             require_aspect_ratio=False,
             size=None,
@@ -1833,6 +1864,10 @@ def test_conf_schema_defines_command_prompt_optimization():
     assert "command_prompt_optimizer_provider_id" in schema
     assert schema["command_prompt_optimizer_provider_id"]["type"] == "string"
     assert schema["command_prompt_optimizer_provider_id"]["_special"] == "select_provider"
+
+    assert "command_prompt_optimizer_system_prompt" in schema
+    assert schema["command_prompt_optimizer_system_prompt"]["type"] == "text"
+    assert schema["command_prompt_optimizer_system_prompt"]["default"] == ""
 
 
 def test_format_log_text_preserves_full_content():

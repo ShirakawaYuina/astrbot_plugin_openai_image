@@ -76,6 +76,11 @@ class PromptOptimizerSettingsStore:
 
         return str(self.load().get("provider_id", "") or "").strip()
 
+    def get_system_prompt(self) -> str:
+        """读取当前配置的系统提示词。"""
+
+        return str(self.load().get("system_prompt", "") or "").strip()
+
     def save_provider_id(self, provider_id: str) -> dict[str, Any]:
         """保存前端提交的提供商 ID。"""
 
@@ -603,6 +608,7 @@ async def optimize_prompt_text(
     context: Any = None,
     provider_id: str | None = None,
     settings_store: PromptOptimizerSettingsStore | None = None,
+    system_prompt: str | None = None,
     prompt: str,
     mode: str,
     require_aspect_ratio: bool = False,
@@ -617,6 +623,7 @@ async def optimize_prompt_text(
         context: AstrBot 上下文对象。
         provider_id: 可选直接指定的对话提供商 ID。
         settings_store: 可选的提示词优化配置存储（WebUI 设置使用）。
+        system_prompt: 可选的自定义系统提示词，为空时使用内置系统提示词。
         prompt: 用户当前输入的提示词。
         mode: 任务类型，取值 generate 或 edit。
         require_aspect_ratio: 是否强制要求提示词包含如 1:1、16:9 等格式的画面比例。
@@ -643,6 +650,14 @@ async def optimize_prompt_text(
     if not provider:
         raise RuntimeError("未找到可用的 AstrBot 对话模型提供商，请先在 AstrBot 设置中配置模型")
 
+    target_system_prompt = (
+        str(system_prompt).strip()
+        if system_prompt and str(system_prompt).strip()
+        else (settings_store.get_system_prompt() if settings_store else "")
+    )
+    if not target_system_prompt:
+        target_system_prompt = PROMPT_OPTIMIZER_SYSTEM_PROMPT
+
     mode_label = PROMPT_OPTIMIZER_MODE_LABELS.get(str(mode or "").strip(), "图片生成")
     ratio_requirement = ""
     if require_aspect_ratio:
@@ -661,7 +676,7 @@ async def optimize_prompt_text(
     try:
         response = await provider.text_chat(
             prompt=user_prompt,
-            system_prompt=PROMPT_OPTIMIZER_SYSTEM_PROMPT,
+            system_prompt=target_system_prompt,
         )
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"提示词优化接口请求失败: {exc}") from exc
@@ -1135,13 +1150,25 @@ class ImageStudioApi:
         if not prompt:
             return error_response("提示词不能为空")
 
+        custom_system_prompt = (
+            str(
+                getattr(self.plugin, "config", {}).get(
+                    "command_prompt_optimizer_system_prompt", ""
+                )
+                or ""
+            ).strip()
+            or None
+        )
+        optimize_kwargs: dict[str, Any] = {
+            "context": getattr(self.plugin, "context", None),
+            "settings_store": self.prompt_optimizer_settings,
+            "prompt": prompt,
+            "mode": mode,
+        }
+        if custom_system_prompt:
+            optimize_kwargs["system_prompt"] = custom_system_prompt
         try:
-            optimized_prompt = await optimize_prompt_text(
-                context=getattr(self.plugin, "context", None),
-                settings_store=self.prompt_optimizer_settings,
-                prompt=prompt,
-                mode=mode,
-            )
+            optimized_prompt = await optimize_prompt_text(**optimize_kwargs)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "[OpenAIImage][webui][prompt_optimizer] 优化失败 mode=%s prompt=%s error=%s",

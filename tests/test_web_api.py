@@ -1425,4 +1425,40 @@ async def test_optimize_prompt_text_translates_when_model_returns_chinese(tmp_pa
     assert res == "A wooden cabin by the lake in morning mist, cinematic lighting"
 
 
+@pytest.mark.asyncio
+async def test_optimize_prompt_text_uses_custom_system_prompt(tmp_path: Path):
+    module = _load_module()
+    settings_path = tmp_path / "prompt_optimizer_settings.json"
+    store = module.PromptOptimizerSettingsStore(settings_path)
+
+    chat_called = {}
+
+    class CustomSysPromptProvider:
+        async def text_chat(self, prompt, system_prompt):
+            chat_called["system_prompt"] = system_prompt
+            return SimpleNamespace(
+                role="assistant",
+                completion_text="An oil painting of a lonely lighthouse",
+            )
+
+    provider = CustomSysPromptProvider()
+    context = SimpleNamespace(
+        get_all_providers=lambda: [provider],
+        get_using_provider=lambda: provider,
+        get_provider_by_id=lambda pid: provider,
+    )
+
+    custom_sys = "You are a specialist in classic oil paintings."
+    res = await module.optimize_prompt_text(
+        context=context,
+        settings_store=store,
+        system_prompt=custom_sys,
+        prompt="灯塔",
+        mode="generate",
+    )
+    assert chat_called["system_prompt"] == custom_sys
+    assert res == "An oil painting of a lonely lighthouse"
+
+
+
 

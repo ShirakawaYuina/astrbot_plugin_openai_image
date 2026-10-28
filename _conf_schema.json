@@ -107,5 +107,11 @@
         "_special": "select_provider",
         "default": "",
         "hint": "用于指令提示词优化的 AstrBot 对话模型提供商。留空时使用 AstrBot 当前默认启用的对话模型。"
+    },
+    "command_prompt_optimizer_system_prompt": {
+        "description": "指令提示词优化系统提示词",
+        "type": "text",
+        "default": "",
+        "hint": "自定义指令提示词优化模型使用的系统提示词（System Prompt）。留空时使用插件内置的高质量纯英文生图提示词优化设定。"
     }
 }
