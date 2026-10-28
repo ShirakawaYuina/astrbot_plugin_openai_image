@@ -373,8 +373,8 @@ class OpenAIImagePlugin(Star):
         if preset_prompt is not None:
             logger.info(
                 "[OpenAIImage][edit] 提示词命中预设，直通使用预设提示词（跳过优化）: before=%s after=%s",
-                self._truncate_text(parsed_command.prompt),
-                self._truncate_text(preset_prompt),
+                self._format_log_text(parsed_command.prompt),
+                self._format_log_text(preset_prompt),
             )
             final_prompt = preset_prompt
         else:
@@ -440,8 +440,8 @@ class OpenAIImagePlugin(Star):
         if preset_prompt is not None:
             logger.info(
                 "[OpenAIImage][qlogo] 提示词命中预设，直通使用预设提示词（跳过优化）: before=%s after=%s",
-                self._truncate_text(parsed_command.prompt),
-                self._truncate_text(preset_prompt),
+                self._format_log_text(parsed_command.prompt),
+                self._format_log_text(preset_prompt),
             )
             final_prompt = preset_prompt
         else:
@@ -549,7 +549,7 @@ class OpenAIImagePlugin(Star):
             "[OpenAIImage][generate][task_id=%s] 收到请求 count=%s prompt=%s source=%s",
             task_id,
             count,
-            self._truncate_text(prompt),
+            self._format_log_text(prompt),
             "command" if send_user_message else "llm_tool",
         )
 
@@ -610,7 +610,7 @@ class OpenAIImagePlugin(Star):
             count,
             len(image_components),
             image_source,
-            self._truncate_text(prompt),
+            self._format_log_text(prompt),
             "command" if send_user_message else "llm_tool",
         )
         try:
@@ -682,7 +682,7 @@ class OpenAIImagePlugin(Star):
             task_id,
             qq_id,
             count,
-            self._truncate_text(prompt),
+            self._format_log_text(prompt),
             "command" if send_user_message else "llm_tool",
         )
 
@@ -752,7 +752,7 @@ class OpenAIImagePlugin(Star):
             "[OpenAIImage][figure][task_id=%s] 收到请求 count=%s prompt=%s source=%s",
             task_id,
             count,
-            self._truncate_text(prompt),
+            self._format_log_text(prompt),
             "command" if send_user_message else "llm_tool",
         )
 
@@ -1578,8 +1578,8 @@ class OpenAIImagePlugin(Star):
             )
             logger.info(
                 "[OpenAIImage][optimize] 指令提示词已优化: before=%s after=%s",
-                self._truncate_text(clean_prompt),
-                self._truncate_text(optimized),
+                self._format_log_text(clean_prompt),
+                self._format_log_text(optimized),
             )
             return optimized
         except Exception as exc:  # noqa: BLE001
@@ -1699,8 +1699,21 @@ class OpenAIImagePlugin(Star):
         return uuid.uuid4().hex[:12]
 
     @staticmethod
+    def _format_log_text(value: Any) -> str:
+        """格式化日志文本，将换行与连续空白压缩为单空格，保留完整内容不截断。
+
+        Args:
+            value: 待记录到日志的文本或对象。
+
+        Returns:
+            规整后的完整单行文本。
+        """
+
+        return " ".join(str(value or "").split())
+
+    @staticmethod
     def _truncate_text(value: Any, limit: int = 200) -> str:
-        """截断日志中的长文本。"""
+        """截断长文本。"""
 
         text = " ".join(str(value or "").split())
         if len(text) <= limit:

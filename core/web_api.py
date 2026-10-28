@@ -1146,7 +1146,7 @@ class ImageStudioApi:
             logger.warning(
                 "[OpenAIImage][webui][prompt_optimizer] 优化失败 mode=%s prompt=%s error=%s",
                 mode,
-                _truncate_log_text(prompt),
+                _format_log_text(prompt),
                 _truncate_log_text(str(exc)),
             )
             return error_response(str(exc), status_code=500)
@@ -1154,8 +1154,8 @@ class ImageStudioApi:
         logger.info(
             "[OpenAIImage][webui][prompt_optimizer] 优化完成 mode=%s before=%s after=%s",
             mode,
-            _truncate_log_text(prompt),
-            _truncate_log_text(optimized_prompt),
+            _format_log_text(prompt),
+            _format_log_text(optimized_prompt),
         )
         return json_response({"prompt": optimized_prompt})
 
@@ -1382,7 +1382,7 @@ class ImageStudioApi:
         logger.info(
             "[OpenAIImage][webui][%s] 收到请求 prompt=%s size=%s quality=%s moderation=%s endpoint_type=%s model=%s",
             mode,
-            _truncate_log_text(prompt),
+            _format_log_text(prompt),
             size,
             quality,
             moderation,
@@ -1431,6 +1431,19 @@ class ImageStudioApi:
 
 
 
+
+
+def _format_log_text(value: Any) -> str:
+    """格式化日志文本，将换行与连续空白规范化为单空格，保留完整内容不截断。
+
+    Args:
+        value: 待记录到日志的文本或对象。
+
+    Returns:
+        规整后的完整单行文本。
+    """
+
+    return " ".join(str(value or "").split())
 
 
 def _truncate_log_text(value: str, max_length: int = LOG_PROMPT_MAX_LENGTH) -> str:

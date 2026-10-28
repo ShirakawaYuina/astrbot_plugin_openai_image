@@ -1835,6 +1835,17 @@ def test_conf_schema_defines_command_prompt_optimization():
     assert schema["command_prompt_optimizer_provider_id"]["_special"] == "select_provider"
 
 
+def test_format_log_text_preserves_full_content():
+    module = _load_module()
+    long_prompt = "A " + "very " * 100 + "detailed prompt\nwith line breaks"
+    formatted = module.OpenAIImagePlugin._format_log_text(long_prompt)
+    assert "\n" not in formatted
+    assert "..." not in formatted
+    assert formatted.startswith("A very very")
+    assert formatted.endswith("detailed prompt with line breaks")
+
+
+
 
 
 

@@ -764,8 +764,7 @@ def test_web_api_logs_request_with_safe_prompt_summary(
     assert "[OpenAIImage][webui][%s] 收到请求" in message
     assert args[0] == "generate"
     assert "\n" not in str(args[1])
-    assert str(args[1]).endswith("...")
-    assert len(str(args[1])) <= module.LOG_PROMPT_MAX_LENGTH + 3
+    assert str(args[1]) == f"第一行 {'猫' * 160}"
     assert args[-2:] == ("images", "gpt-image-test")
 
 
