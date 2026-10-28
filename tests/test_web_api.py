@@ -1500,3 +1500,42 @@ async def test_create_generation_job_applies_local_prefix_for_local_provider():
     res = await job()
     assert res == Path("dummy.png")
     assert generated_prompt["prompt"] == "abc，一只猫"
+
+@pytest.mark.asyncio
+async def test_create_edit_job_applies_local_prefix_for_local_provider():
+    module = _load_module()
+
+    edited_prompt = {}
+
+    class FakeService:
+        async def edit(self, model, prompt, data_urls, **kwargs):
+            edited_prompt["prompt"] = prompt
+            return Path("dummy_edit.png")
+
+    fake_provider = SimpleNamespace(
+        provider_id="local_sd",
+        model="sdxl",
+        endpoint_type="responses",
+    )
+    fake_plugin = SimpleNamespace(
+        config={"local_model_edit_prompt_prefix": "edit_prefix"},
+        _get_active_image_provider=lambda: fake_provider,
+        _maybe_apply_local_prompt_prefix=lambda prompt, provider=None, mode="edit": (
+            "edit_prefix，" + prompt if (provider and provider.provider_id.startswith("local") and mode == "edit") else prompt
+        ),
+    )
+
+    job = module.create_edit_job(
+        plugin=fake_plugin,
+        prompt="变成黑猫",
+        data_urls=["data:image/png;base64,xxxx"],
+        size=None,
+        quality="auto",
+        moderation="low",
+        edit_service=FakeService(),
+        provider=fake_provider,
+    )
+
+    res = await job()
+    assert res == Path("dummy_edit.png")
+    assert edited_prompt["prompt"] == "edit_prefix，变成黑猫"

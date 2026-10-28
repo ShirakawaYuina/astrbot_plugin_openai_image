@@ -272,6 +272,26 @@ class ImageLibrary:
         return data if isinstance(data, dict) else {}
 
 
+def _safe_apply_local_prompt_prefix(
+    plugin: Any,
+    prompt: str,
+    provider: Any = None,
+    mode: str = "generate",
+) -> str:
+    """安全调用插件的本地模型提示词前缀追加方法，自适应各种函数签名。"""
+
+    apply_prefix = getattr(plugin, "_maybe_apply_local_prompt_prefix", None)
+    if not callable(apply_prefix):
+        return prompt
+    try:
+        return apply_prefix(prompt, provider=provider, mode=mode)
+    except TypeError:
+        try:
+            return apply_prefix(prompt, provider=provider)
+        except TypeError:
+            return apply_prefix(prompt)
+
+
 def create_generation_job(
     *,
     plugin: Any,
@@ -307,11 +327,8 @@ def create_generation_job(
     async def _job() -> Path:
         resolve_size = getattr(plugin, "_resolve_output_size", None)
         out_size = resolve_size(size) if callable(resolve_size) else size
-        apply_prefix = getattr(plugin, "_maybe_apply_local_prompt_prefix", None)
-        target_prompt = (
-            apply_prefix(prompt, provider=provider)
-            if callable(apply_prefix)
-            else prompt
+        target_prompt = _safe_apply_local_prompt_prefix(
+            plugin, prompt, provider=provider, mode="generate"
         )
         try:
             return await service.generate(
@@ -341,10 +358,8 @@ def create_generation_job(
                     gateway=fallback_gateway,
                     cache_store=getattr(plugin, "_cache_store", None),
                 )
-                fallback_prompt = (
-                    apply_prefix(prompt, provider=fallback)
-                    if callable(apply_prefix)
-                    else prompt
+                fallback_prompt = _safe_apply_local_prompt_prefix(
+                    plugin, prompt, provider=fallback, mode="generate"
                 )
                 return await fallback_service.generate(
                     model=fallback.model,
@@ -401,11 +416,8 @@ def create_edit_job(
     async def _job() -> Path:
         resolve_size = getattr(plugin, "_resolve_output_size", None)
         out_size = resolve_size(size) if callable(resolve_size) else size
-        apply_prefix = getattr(plugin, "_maybe_apply_local_prompt_prefix", None)
-        target_prompt = (
-            apply_prefix(prompt, provider=provider)
-            if callable(apply_prefix)
-            else prompt
+        target_prompt = _safe_apply_local_prompt_prefix(
+            plugin, prompt, provider=provider, mode="edit"
         )
         try:
             return await service.edit(
@@ -436,10 +448,8 @@ def create_edit_job(
                     gateway=fallback_gateway,
                     cache_store=getattr(plugin, "_cache_store", None),
                 )
-                fallback_prompt = (
-                    apply_prefix(prompt, provider=fallback)
-                    if callable(apply_prefix)
-                    else prompt
+                fallback_prompt = _safe_apply_local_prompt_prefix(
+                    plugin, prompt, provider=fallback, mode="edit"
                 )
                 return await fallback_service.edit(
                     model=fallback.model,
@@ -1083,11 +1093,8 @@ class ImageStudioApi:
 
         self.plugin._ensure_ready()
         gen_service, provider = await self._get_webui_generate_service()
-        apply_prefix = getattr(self.plugin, "_maybe_apply_local_prompt_prefix", None)
-        final_prompt = (
-            apply_prefix(prompt, provider=provider)
-            if callable(apply_prefix)
-            else prompt
+        final_prompt = _safe_apply_local_prompt_prefix(
+            self.plugin, prompt, provider=provider, mode="generate"
         )
         self._log_web_request(
             mode="generate",
@@ -1142,11 +1149,8 @@ class ImageStudioApi:
 
         self.plugin._ensure_ready()
         edit_service, provider = await self._get_webui_edit_service()
-        apply_prefix = getattr(self.plugin, "_maybe_apply_local_prompt_prefix", None)
-        final_prompt = (
-            apply_prefix(prompt, provider=provider)
-            if callable(apply_prefix)
-            else prompt
+        final_prompt = _safe_apply_local_prompt_prefix(
+            self.plugin, prompt, provider=provider, mode="edit"
         )
         self._log_web_request(
             mode="edit",

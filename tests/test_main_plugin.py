@@ -1885,22 +1885,27 @@ def test_format_log_text_preserves_full_content():
 
 
 
-def test_conf_schema_defines_local_model_prompt_prefix():
+def test_conf_schema_defines_local_model_prompt_prefixes():
     import json
 
     schema = json.loads((ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
-    assert "local_model_prompt_prefix" in schema
-    assert schema["local_model_prompt_prefix"]["type"] == "string"
-    assert schema["local_model_prompt_prefix"]["default"] == ""
+    assert "local_model_generate_prompt_prefix" in schema
+    assert schema["local_model_generate_prompt_prefix"]["type"] == "string"
+    assert schema["local_model_generate_prompt_prefix"]["default"] == ""
+
+    assert "local_model_edit_prompt_prefix" in schema
+    assert schema["local_model_edit_prompt_prefix"]["type"] == "string"
+    assert schema["local_model_edit_prompt_prefix"]["default"] == ""
 
 
 @pytest.mark.asyncio
-async def test_handle_generate_command_appends_prefix_for_local_model():
+async def test_handle_generate_and_edit_commands_use_separate_local_prefixes():
     module = _load_module()
     plugin = module.OpenAIImagePlugin(
         context=SimpleNamespace(),
         config={
-            "local_model_prompt_prefix": "abc",
+            "local_model_generate_prompt_prefix": "gen_tag",
+            "local_model_edit_prompt_prefix": "edit_tag",
             "active_provider_id": "local_sd",
             "image_providers": [
                 {
@@ -1916,15 +1921,21 @@ async def test_handle_generate_command_appends_prefix_for_local_model():
     plugin._execute_generate_flow = AsyncMock(
         return_value={"status": "success", "summary": "已生成 1 张图片"}
     )
+    plugin._execute_edit_flow = AsyncMock(
+        return_value={"status": "success", "summary": "已编辑 1 张图片"}
+    )
     event = _make_event(is_admin=True)
 
+    # 1. 文生图指令应使用 local_model_generate_prompt_prefix
     await plugin._handle_generate_command(event, raw_prompt="一只猫")
+    assert 'prompt="gen_tag，一只猫"' in event._sent_messages[0]
+    call_kwargs_gen = plugin._execute_generate_flow.await_args.kwargs
+    assert call_kwargs_gen["prompt"] == "gen_tag，一只猫"
 
-    event.send.assert_awaited_once()
-    assert 'prompt="abc，一只猫"' in event._sent_messages[0]
-    plugin._execute_generate_flow.assert_awaited_once()
-    call_kwargs = plugin._execute_generate_flow.await_args.kwargs
-    assert call_kwargs["prompt"] == "abc，一只猫"
+    # 2. 图片编辑指令应使用 local_model_edit_prompt_prefix
+    await _collect_asyncgen(plugin._handle_edit_command(event, raw_prompt="变成白色"))
+    call_kwargs_edit = plugin._execute_edit_flow.await_args.kwargs
+    assert call_kwargs_edit["prompt"] == "edit_tag，变成白色"
 
 
 @pytest.mark.asyncio
@@ -1933,7 +1944,8 @@ async def test_handle_generate_command_does_not_append_prefix_for_non_local_mode
     plugin = module.OpenAIImagePlugin(
         context=SimpleNamespace(),
         config={
-            "local_model_prompt_prefix": "abc",
+            "local_model_generate_prompt_prefix": "abc",
+            "local_model_edit_prompt_prefix": "def",
             "active_provider_id": "default",
             "image_providers": [
                 {
@@ -1964,7 +1976,7 @@ async def test_llm_tool_generate_image_appends_prefix_for_local_model():
     plugin = module.OpenAIImagePlugin(
         context=SimpleNamespace(),
         config={
-            "local_model_prompt_prefix": "score_9, score_8_up",
+            "local_model_generate_prompt_prefix": "score_9, score_8_up",
             "active_provider_id": "local_fastapi",
             "image_providers": [
                 {
