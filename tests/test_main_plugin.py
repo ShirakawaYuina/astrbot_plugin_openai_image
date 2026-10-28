@@ -1884,3 +1884,106 @@ def test_format_log_text_preserves_full_content():
 
 
 
+
+def test_conf_schema_defines_local_model_prompt_prefix():
+    import json
+
+    schema = json.loads((ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
+    assert "local_model_prompt_prefix" in schema
+    assert schema["local_model_prompt_prefix"]["type"] == "string"
+    assert schema["local_model_prompt_prefix"]["default"] == ""
+
+
+@pytest.mark.asyncio
+async def test_handle_generate_command_appends_prefix_for_local_model():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "local_model_prompt_prefix": "abc",
+            "active_provider_id": "local_sd",
+            "image_providers": [
+                {
+                    "provider_id": "local_sd",
+                    "name": "本地SD",
+                    "base_url": "http://127.0.0.1:7860/v1",
+                    "model": "sdxl",
+                    "endpoint_type": "responses",
+                }
+            ],
+        },
+    )
+    plugin._execute_generate_flow = AsyncMock(
+        return_value={"status": "success", "summary": "已生成 1 张图片"}
+    )
+    event = _make_event(is_admin=True)
+
+    await plugin._handle_generate_command(event, raw_prompt="一只猫")
+
+    event.send.assert_awaited_once()
+    assert 'prompt="abc，一只猫"' in event._sent_messages[0]
+    plugin._execute_generate_flow.assert_awaited_once()
+    call_kwargs = plugin._execute_generate_flow.await_args.kwargs
+    assert call_kwargs["prompt"] == "abc，一只猫"
+
+
+@pytest.mark.asyncio
+async def test_handle_generate_command_does_not_append_prefix_for_non_local_model():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "local_model_prompt_prefix": "abc",
+            "active_provider_id": "default",
+            "image_providers": [
+                {
+                    "provider_id": "default",
+                    "name": "云端接口",
+                    "base_url": "https://api.example.com/v1",
+                    "model": "gpt-image-2",
+                    "endpoint_type": "responses",
+                }
+            ],
+        },
+    )
+    plugin._execute_generate_flow = AsyncMock(
+        return_value={"status": "success", "summary": "已生成 1 张图片"}
+    )
+    event = _make_event(is_admin=True)
+
+    await plugin._handle_generate_command(event, raw_prompt="一只猫")
+
+    assert 'prompt="一只猫"' in event._sent_messages[0]
+    call_kwargs = plugin._execute_generate_flow.await_args.kwargs
+    assert call_kwargs["prompt"] == "一只猫"
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_generate_image_appends_prefix_for_local_model():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "local_model_prompt_prefix": "score_9, score_8_up",
+            "active_provider_id": "local_fastapi",
+            "image_providers": [
+                {
+                    "provider_id": "local_fastapi",
+                    "name": "本地模型",
+                    "base_url": "http://127.0.0.1:8000/v1",
+                    "model": "flux",
+                    "endpoint_type": "responses",
+                }
+            ],
+        },
+    )
+    plugin._execute_generate_flow = AsyncMock(
+        return_value={"status": "success", "summary": "生成的图片已发送给用户"}
+    )
+    event = _make_event(is_admin=False)
+
+    summary = await plugin.openai_generate_image_tool(event, prompt="1girl, solo", count=1)
+    assert summary == "生成的图片已发送给用户"
+    event.send.assert_awaited_once()
+    assert 'prompt="score_9, score_8_up, 1girl, solo"' in event._sent_messages[0]
+    assert plugin._execute_generate_flow.await_args.kwargs["prompt"] == "score_9, score_8_up, 1girl, solo"

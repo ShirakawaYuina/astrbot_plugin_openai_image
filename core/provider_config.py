@@ -442,6 +442,77 @@ def is_same_model(
     return False
 
 
+def is_local_model(
+    provider_id: str | None = None,
+    model: str | None = None,
+    provider: Any = None,
+) -> bool:
+    """判断供应商或模型是否属于 local 开头的模型。
+
+    Args:
+        provider_id: 可选的供应商唯一标识符。
+        model: 可选的模型名称。
+        provider: 可选的 ImageProviderConfig 或具备对应属性的供应商对象。
+
+    Returns:
+        若 provider_id 或 model（忽略大小写和首尾空格）以 local 开头则返回 True，否则返回 False。
+    """
+    pid = str(
+        provider_id
+        if provider_id is not None
+        else (getattr(provider, "provider_id", "") if provider else "")
+    ).strip().lower()
+    m = str(
+        model
+        if model is not None
+        else (getattr(provider, "model", "") if provider else "")
+    ).strip().lower()
+    return pid.startswith("local") or m.startswith("local")
+
+
+def apply_prompt_prefix(prompt: str, prefix: str) -> str:
+    """为提示词追加指定前缀。
+
+    若提示词已具备此前缀，则不会重复追加。
+    若前缀未包含结束标点，则根据语言特点智能选择逗号连接；若已有标点则保持原有标点。
+
+    Args:
+        prompt: 用户的提示词。
+        prefix: 欲追加的前缀文本。
+
+    Returns:
+        拼接前缀后的最终提示词。若 prompt 为空则返回空字符串；若 prefix 为空则返回原 prompt。
+    """
+    clean_prefix = str(prefix or "").strip()
+    clean_prompt = str(prompt or "").strip()
+
+    if not clean_prefix:
+        return clean_prompt
+    if not clean_prompt:
+        return ""
+
+    if clean_prompt == clean_prefix:
+        return clean_prompt
+    if clean_prompt.startswith(clean_prefix):
+        remainder = clean_prompt[len(clean_prefix):]
+        if remainder and (remainder[0] in " \t\r\n,，;；、" or not remainder[0].isalnum()):
+            return clean_prompt
+
+    p = clean_prompt.lstrip(" \t\r\n,，;；、")
+    pre = clean_prefix.rstrip(" \t\r\n")
+    if not p:
+        return pre
+
+    if pre.endswith(("，", "；", "、", "。", "！")):
+        return f"{pre}{p}"
+    if pre.endswith((",", ";", ".", "!")):
+        return f"{pre} {p}"
+
+    has_chinese = bool(re.search(r"[\u4e00-\u9fff]", pre + p))
+    separator = "，" if has_chinese else ", "
+    return f"{pre}{separator}{p}"
+
+
 def _provider_to_dict(provider: ImageProviderConfig) -> dict[str, Any]:
     """将 ImageProviderConfig 转换为可序列化字典。"""
     return {

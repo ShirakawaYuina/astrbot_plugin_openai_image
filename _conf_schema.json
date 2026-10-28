@@ -113,5 +113,11 @@
         "type": "text",
         "default": "",
         "hint": "自定义指令提示词优化模型使用的系统提示词（System Prompt）。留空时使用插件内置的高质量纯英文生图提示词优化设定。"
+    },
+    "local_model_prompt_prefix": {
+        "description": "本地模型提示词前缀",
+        "type": "string",
+        "default": "",
+        "hint": "对 local 开头的图片模型/供应商自动追加的提示词前缀。例如配置为 abc 时，用户提示词为「一只猫」，最终生成的提示词即为「abc，一只猫」。留空时不追加。"
     }
 }

@@ -444,3 +444,89 @@ def test_is_same_model():
     assert module.is_same_model(p1, p3) is False
 
 
+
+
+def test_is_local_model():
+    module = _load_module()
+
+    # provider_id 以 local 开头（大小写不敏感）
+    assert module.is_local_model(provider_id="local_sd") is True
+    assert module.is_local_model(provider_id="LOCAL_FASTAPI") is True
+    assert module.is_local_model(provider_id="local") is True
+
+    # model 以 local 开头（大小写不敏感）
+    assert module.is_local_model(model="local-flux") is True
+    assert module.is_local_model(model="LOCAL_SDXL") is True
+
+    # 使用 provider 实例
+    local_p1 = module.ImageProviderConfig(
+        provider_id="local_custom",
+        name="本地接口",
+        base_url="http://127.0.0.1:8000/v1",
+        api_key="",
+        proxy_url="",
+        model="sdxl",
+        endpoint_type="responses",
+    )
+    assert module.is_local_model(provider=local_p1) is True
+
+    local_p2 = module.ImageProviderConfig(
+        provider_id="custom_id",
+        name="本地模型",
+        base_url="http://127.0.0.1:8000/v1",
+        api_key="",
+        proxy_url="",
+        model="local-sd15",
+        endpoint_type="responses",
+    )
+    assert module.is_local_model(provider=local_p2) is True
+
+    # 非 local 接口
+    cloud_p = module.ImageProviderConfig(
+        provider_id="default",
+        name="默认接口",
+        base_url="https://api.example.com/v1",
+        api_key="",
+        proxy_url="",
+        model="gpt-image-2",
+        endpoint_type="responses",
+    )
+    assert module.is_local_model(provider=cloud_p) is False
+    assert module.is_local_model(provider_id="default", model="gpt-5.4-mini") is False
+    assert module.is_local_model() is False
+
+
+def test_apply_prompt_prefix():
+    module = _load_module()
+
+    # 用户示例：前缀 abc，用户提示词 一只猫 -> abc，一只猫
+    assert module.apply_prompt_prefix("一只猫", "abc") == "abc，一只猫"
+
+    # 前缀已带全角标点，不重复拼接
+    assert module.apply_prompt_prefix("一只猫", "abc，") == "abc，一只猫"
+    assert module.apply_prompt_prefix("一只猫", "高清壁纸；") == "高清壁纸；一只猫"
+
+    # 前缀已带半角逗号加空格
+    assert module.apply_prompt_prefix("一只猫", "abc, ") == "abc, 一只猫"
+    assert module.apply_prompt_prefix("a cute cat", "abc, ") == "abc, a cute cat"
+
+    # 英文提示词与英文前缀，自动半角逗号加空格
+    assert (
+        module.apply_prompt_prefix("1girl, solo", "masterpiece, best quality")
+        == "masterpiece, best quality, 1girl, solo"
+    )
+
+    # 提示词开头已有多余标点
+    assert module.apply_prompt_prefix("，一只猫", "abc") == "abc，一只猫"
+    assert module.apply_prompt_prefix(", a dog", "photorealistic") == "photorealistic, a dog"
+
+    # 幂等性：已追加过前缀，不再重复追加
+    assert module.apply_prompt_prefix("abc，一只猫", "abc") == "abc，一只猫"
+    assert module.apply_prompt_prefix("abc, a dog", "abc") == "abc, a dog"
+    assert module.apply_prompt_prefix("abc a dog", "abc") == "abc a dog"
+
+    # 空前缀或空提示词
+    assert module.apply_prompt_prefix("一只猫", "") == "一只猫"
+    assert module.apply_prompt_prefix("一只猫", "  ") == "一只猫"
+    assert module.apply_prompt_prefix("", "abc") == ""
+    assert module.apply_prompt_prefix("   ", "abc") == ""

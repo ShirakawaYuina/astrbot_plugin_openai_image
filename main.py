@@ -25,7 +25,9 @@ from .core.models import ParsedCommand
 from .core.presenters.result_presenter import ResultPresenter
 from .core.provider_config import (
     ImageProviderConfig,
+    apply_prompt_prefix,
     get_default_providers_path,
+    is_local_model,
     is_same_model,
     load_providers_from_file,
     resolve_active_image_provider,
@@ -189,7 +191,7 @@ class OpenAIImagePlugin(Star):
         """
         # LLM 调用时可能传递 float 类型（如 1.0），需转为 int
         count = int(count)
-        clean_prompt = str(prompt or "").strip()
+        clean_prompt = self._maybe_apply_local_prompt_prefix(str(prompt or "").strip())
 
         active_count = getattr(self._task_service, "active_tasks", 0) + count
         await self._send_pending_message(
@@ -226,7 +228,7 @@ class OpenAIImagePlugin(Star):
         if extract_first_image_component(event) is None:
             return "未检测到图片，请在当前消息中携带图片或回复一张图片后再调用图片编辑工具。"
 
-        clean_prompt = str(prompt or "").strip()
+        clean_prompt = self._maybe_apply_local_prompt_prefix(str(prompt or "").strip())
         active_count = getattr(self._task_service, "active_tasks", 0) + count
         await self._send_pending_message(
             event,
@@ -275,7 +277,7 @@ class OpenAIImagePlugin(Star):
                 "尚未设置机器人形象图，请先回复或发送一张图片并使用 /oaifigure 设置。"
             )
 
-        clean_prompt = str(prompt or "").strip()
+        clean_prompt = self._maybe_apply_local_prompt_prefix(str(prompt or "").strip())
         parsed_count = int(count)
         active_count = getattr(self._task_service, "active_tasks", 0) + parsed_count
         await self._send_pending_message(
@@ -337,6 +339,7 @@ class OpenAIImagePlugin(Star):
             require_aspect_ratio=True,
             size=parsed_command.size,
         )
+        final_prompt = self._maybe_apply_local_prompt_prefix(final_prompt)
 
         active_count = (
             getattr(self._task_service, "active_tasks", 0) + parsed_command.count
@@ -381,6 +384,7 @@ class OpenAIImagePlugin(Star):
             final_prompt = await self._maybe_optimize_command_prompt(
                 parsed_command.prompt, mode="edit"
             )
+        final_prompt = self._maybe_apply_local_prompt_prefix(final_prompt)
 
         active_count = (
             getattr(self._task_service, "active_tasks", 0) + parsed_command.count
@@ -448,6 +452,7 @@ class OpenAIImagePlugin(Star):
             final_prompt = await self._maybe_optimize_command_prompt(
                 parsed_command.prompt, mode="edit"
             )
+        final_prompt = self._maybe_apply_local_prompt_prefix(final_prompt)
 
         qq_id = extract_first_at_target(event)
         if not qq_id:
@@ -544,19 +549,20 @@ class OpenAIImagePlugin(Star):
         task_id = self._new_task_id()
         command_start = time.perf_counter()
         self._ensure_ready()
+        target_prompt = self._maybe_apply_local_prompt_prefix(prompt)
 
         logger.info(
             "[OpenAIImage][generate][task_id=%s] 收到请求 count=%s prompt=%s source=%s",
             task_id,
             count,
-            self._format_log_text(prompt),
+            self._format_log_text(target_prompt),
             "command" if send_user_message else "llm_tool",
         )
 
         task_results = await self._run_generate_jobs(
             task_id=task_id,
             count=count,
-            prompt=prompt,
+            prompt=target_prompt,
             size=self._resolve_output_size(size),
             quality=quality,
             moderation=moderation,
@@ -589,6 +595,7 @@ class OpenAIImagePlugin(Star):
         task_id = self._new_task_id()
         command_start = time.perf_counter()
         self._ensure_ready()
+        target_prompt = self._maybe_apply_local_prompt_prefix(prompt)
 
         image_components = extract_image_components(event)
         if not image_components:
@@ -610,7 +617,7 @@ class OpenAIImagePlugin(Star):
             count,
             len(image_components),
             image_source,
-            self._format_log_text(prompt),
+            self._format_log_text(target_prompt),
             "command" if send_user_message else "llm_tool",
         )
         try:
@@ -641,7 +648,7 @@ class OpenAIImagePlugin(Star):
         task_results = await self._run_edit_jobs(
             task_id=task_id,
             count=count,
-            prompt=prompt,
+            prompt=target_prompt,
             size=self._resolve_output_size(size),
             quality=quality,
             moderation=moderation,
@@ -676,13 +683,14 @@ class OpenAIImagePlugin(Star):
         task_id = self._new_task_id()
         command_start = time.perf_counter()
         self._ensure_ready()
+        target_prompt = self._maybe_apply_local_prompt_prefix(prompt)
 
         logger.info(
             "[OpenAIImage][qlogo][task_id=%s] 收到请求 qq_id=%s count=%s prompt=%s source=%s",
             task_id,
             qq_id,
             count,
-            self._format_log_text(prompt),
+            self._format_log_text(target_prompt),
             "command" if send_user_message else "llm_tool",
         )
 
@@ -704,7 +712,7 @@ class OpenAIImagePlugin(Star):
         task_results = await self._run_edit_jobs(
             task_id=task_id,
             count=count,
-            prompt=prompt,
+            prompt=target_prompt,
             size=self._resolve_output_size(size),
             quality=quality,
             moderation=moderation,
@@ -748,11 +756,12 @@ class OpenAIImagePlugin(Star):
                 await event.send(event.plain_result(summary))
             return {"status": "failed", "summary": summary}
 
+        target_prompt = self._maybe_apply_local_prompt_prefix(prompt)
         logger.info(
             "[OpenAIImage][figure][task_id=%s] 收到请求 count=%s prompt=%s source=%s",
             task_id,
             count,
-            self._format_log_text(prompt),
+            self._format_log_text(target_prompt),
             "command" if send_user_message else "llm_tool",
         )
 
@@ -773,7 +782,7 @@ class OpenAIImagePlugin(Star):
         task_results = await self._run_edit_jobs(
             task_id=task_id,
             count=count,
-            prompt=prompt,
+            prompt=target_prompt,
             size=self._resolve_output_size(size),
             quality=quality,
             moderation=moderation,
@@ -811,10 +820,13 @@ class OpenAIImagePlugin(Star):
             async def _execute_generate() -> Path:
                 primary = self._get_active_image_provider()
                 fallback = self._get_fallback_image_provider()
+                primary_prompt = self._maybe_apply_local_prompt_prefix(
+                    prompt, provider=primary
+                )
                 try:
                     return await self._generate_service.generate(
                         model=primary.model,
-                        prompt=prompt,
+                        prompt=primary_prompt,
                         endpoint_type=primary.endpoint_type,
                         size=size,
                         quality=quality,
@@ -837,9 +849,12 @@ class OpenAIImagePlugin(Star):
                             gateway=fallback_gateway,
                             cache_store=self._cache_store,
                         )
+                        fallback_prompt = self._maybe_apply_local_prompt_prefix(
+                            prompt, provider=fallback
+                        )
                         return await fallback_service.generate(
                             model=fallback.model,
-                            prompt=prompt,
+                            prompt=fallback_prompt,
                             endpoint_type=fallback.endpoint_type,
                             size=size,
                             quality=quality,
@@ -895,10 +910,13 @@ class OpenAIImagePlugin(Star):
             async def _execute_edit() -> Path:
                 primary = self._get_active_image_provider()
                 fallback = self._get_fallback_image_provider()
+                primary_prompt = self._maybe_apply_local_prompt_prefix(
+                    prompt, provider=primary
+                )
                 try:
                     return await self._edit_service.edit(
                         model=primary.model,
-                        prompt=prompt,
+                        prompt=primary_prompt,
                         data_urls=data_urls,
                         endpoint_type=primary.endpoint_type,
                         size=size,
@@ -922,9 +940,12 @@ class OpenAIImagePlugin(Star):
                             gateway=fallback_gateway,
                             cache_store=self._cache_store,
                         )
+                        fallback_prompt = self._maybe_apply_local_prompt_prefix(
+                            prompt, provider=fallback
+                        )
                         return await fallback_service.edit(
                             model=fallback.model,
-                            prompt=prompt,
+                            prompt=fallback_prompt,
                             data_urls=data_urls,
                             endpoint_type=fallback.endpoint_type,
                             size=size,
@@ -1595,6 +1616,38 @@ class OpenAIImagePlugin(Star):
                 exc,
             )
             return clean_prompt
+
+    def _maybe_apply_local_prompt_prefix(
+        self,
+        prompt: str,
+        provider: ImageProviderConfig | None = None,
+    ) -> str:
+        """若目标模型属于 local 开头，则追加配置的提示词前缀。
+
+        Args:
+            prompt: 原始或已优化的提示词。
+            provider: 可选的目标供应商配置；缺省时使用当前启用的图片供应商。
+
+        Returns:
+            若当前模型为 local 模型且配置了前缀，则返回追加前缀后的提示词；否则返回原提示词。
+        """
+        clean_prompt = str(prompt or "").strip()
+        prefix = str(self.config.get("local_model_prompt_prefix", "") or "").strip()
+        if not prefix or not clean_prompt:
+            return clean_prompt
+
+        target_provider = provider or self._get_active_image_provider()
+        if not is_local_model(provider=target_provider):
+            return clean_prompt
+
+        prefixed = apply_prompt_prefix(clean_prompt, prefix)
+        if prefixed != clean_prompt:
+            logger.info(
+                "[OpenAIImage][prefix] 本地模型已追加提示词前缀: before=%s after=%s",
+                self._format_log_text(clean_prompt),
+                self._format_log_text(prefixed),
+            )
+        return prefixed
 
     def _log_task_result(
         self,

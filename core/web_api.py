@@ -307,10 +307,16 @@ def create_generation_job(
     async def _job() -> Path:
         resolve_size = getattr(plugin, "_resolve_output_size", None)
         out_size = resolve_size(size) if callable(resolve_size) else size
+        apply_prefix = getattr(plugin, "_maybe_apply_local_prompt_prefix", None)
+        target_prompt = (
+            apply_prefix(prompt, provider=provider)
+            if callable(apply_prefix)
+            else prompt
+        )
         try:
             return await service.generate(
                 model=model,
-                prompt=prompt,
+                prompt=target_prompt,
                 endpoint_type=endpoint_type,
                 size=out_size,
                 quality=quality,
@@ -335,9 +341,14 @@ def create_generation_job(
                     gateway=fallback_gateway,
                     cache_store=getattr(plugin, "_cache_store", None),
                 )
+                fallback_prompt = (
+                    apply_prefix(prompt, provider=fallback)
+                    if callable(apply_prefix)
+                    else prompt
+                )
                 return await fallback_service.generate(
                     model=fallback.model,
-                    prompt=prompt,
+                    prompt=fallback_prompt,
                     endpoint_type=fallback.endpoint_type,
                     size=out_size,
                     quality=quality,
@@ -390,10 +401,16 @@ def create_edit_job(
     async def _job() -> Path:
         resolve_size = getattr(plugin, "_resolve_output_size", None)
         out_size = resolve_size(size) if callable(resolve_size) else size
+        apply_prefix = getattr(plugin, "_maybe_apply_local_prompt_prefix", None)
+        target_prompt = (
+            apply_prefix(prompt, provider=provider)
+            if callable(apply_prefix)
+            else prompt
+        )
         try:
             return await service.edit(
                 model=model,
-                prompt=prompt,
+                prompt=target_prompt,
                 data_urls=data_urls,
                 endpoint_type=endpoint_type,
                 size=out_size,
@@ -419,9 +436,14 @@ def create_edit_job(
                     gateway=fallback_gateway,
                     cache_store=getattr(plugin, "_cache_store", None),
                 )
+                fallback_prompt = (
+                    apply_prefix(prompt, provider=fallback)
+                    if callable(apply_prefix)
+                    else prompt
+                )
                 return await fallback_service.edit(
                     model=fallback.model,
-                    prompt=prompt,
+                    prompt=fallback_prompt,
                     data_urls=data_urls,
                     endpoint_type=fallback.endpoint_type,
                     size=out_size,
@@ -1061,9 +1083,15 @@ class ImageStudioApi:
 
         self.plugin._ensure_ready()
         gen_service, provider = await self._get_webui_generate_service()
+        apply_prefix = getattr(self.plugin, "_maybe_apply_local_prompt_prefix", None)
+        final_prompt = (
+            apply_prefix(prompt, provider=provider)
+            if callable(apply_prefix)
+            else prompt
+        )
         self._log_web_request(
             mode="generate",
-            prompt=prompt,
+            prompt=final_prompt,
             size=size or "auto",
             quality=quality,
             moderation=moderation,
@@ -1073,7 +1101,7 @@ class ImageStudioApi:
             mode="web_generate",
             job_coro=create_generation_job(
                 plugin=self.plugin,
-                prompt=prompt,
+                prompt=final_prompt,
                 size=size,
                 quality=quality,
                 moderation=moderation,
@@ -1114,9 +1142,15 @@ class ImageStudioApi:
 
         self.plugin._ensure_ready()
         edit_service, provider = await self._get_webui_edit_service()
+        apply_prefix = getattr(self.plugin, "_maybe_apply_local_prompt_prefix", None)
+        final_prompt = (
+            apply_prefix(prompt, provider=provider)
+            if callable(apply_prefix)
+            else prompt
+        )
         self._log_web_request(
             mode="edit",
-            prompt=prompt,
+            prompt=final_prompt,
             size=size or "auto",
             quality=quality,
             moderation=moderation,
@@ -1126,7 +1160,7 @@ class ImageStudioApi:
             mode="web_edit",
             job_coro=create_edit_job(
                 plugin=self.plugin,
-                prompt=prompt,
+                prompt=final_prompt,
                 data_urls=image_data_urls,
                 size=size,
                 quality=quality,

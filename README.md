@@ -130,6 +130,12 @@
 - **自定义模型**：可在「指令提示词优化模型」（`command_prompt_optimizer_provider_id`）中自由选取已在 AstrBot 中配置的任意对话大模型提供商（如 OpenAI、Claude、DeepSeek 等）；留空时自动使用 AstrBot 当前默认启用的对话模型。
 - **自定义系统提示词**：可在「指令提示词优化系统提示词」（`command_prompt_optimizer_system_prompt`）中输入自定义 System Prompt；留空时自动使用插件内置的高质量纯英文生图提示词优化设定。
 
+### 7. 本地模型提示词前缀追加
+
+可在插件配置中设置「本地模型提示词前缀」（`local_model_prompt_prefix`）：
+- **生效条件**：当当前使用的图片供应商 ID 或模型名称以 `local` 开头时（大小写不敏感，例如本地部署的 SD、Flux、ComfyUI 等接口），自动在提示词前追加此前缀。
+- **追加效果**：例如配置前缀为 `abc`，用户提示词为「一只猫」，最终生成的提示词即为「abc，一只猫」；若提示词或前缀为英文，则自动以逗号空格连接（例如 `masterpiece, 1girl`）；若前缀或提示词已自带相应标点，则智能保持并避免重复拼接。留空时不追加。
+
 ## 机器人形象图
 
 使用 `/oaifigure` 设置机器人形象图，使用 `/oaishow` 查看当前已设置的形象图。形象图会保存到 `data/plugin_data/astrbot_plugin_openai_image/figure/robot_figure.png`，重复设置会覆盖旧图。

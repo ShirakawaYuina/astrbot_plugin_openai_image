@@ -1462,3 +1462,41 @@ async def test_optimize_prompt_text_uses_custom_system_prompt(tmp_path: Path):
 
 
 
+
+@pytest.mark.asyncio
+async def test_create_generation_job_applies_local_prefix_for_local_provider():
+    module = _load_module()
+
+    generated_prompt = {}
+
+    class FakeService:
+        async def generate(self, model, prompt, **kwargs):
+            generated_prompt["prompt"] = prompt
+            return Path("dummy.png")
+
+    fake_provider = SimpleNamespace(
+        provider_id="local_sd",
+        model="sdxl",
+        endpoint_type="responses",
+    )
+    fake_plugin = SimpleNamespace(
+        config={"local_model_prompt_prefix": "abc"},
+        _get_active_image_provider=lambda: fake_provider,
+        _maybe_apply_local_prompt_prefix=lambda prompt, provider=None: (
+            "abc，" + prompt if (provider and provider.provider_id.startswith("local")) else prompt
+        ),
+    )
+
+    job = module.create_generation_job(
+        plugin=fake_plugin,
+        prompt="一只猫",
+        size=None,
+        quality="auto",
+        moderation="low",
+        generate_service=FakeService(),
+        provider=fake_provider,
+    )
+
+    res = await job()
+    assert res == Path("dummy.png")
+    assert generated_prompt["prompt"] == "abc，一只猫"
