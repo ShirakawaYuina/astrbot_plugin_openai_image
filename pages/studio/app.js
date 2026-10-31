@@ -801,6 +801,7 @@ async function submitCreateTask() {
   const hasReferences = state.referenceImageFiles.length > 0;
   const startTime = Date.now();
   let timerInterval = null;
+  let stopDotMatrix = () => {};
 
   try {
     const finalPrompt = prompt;
@@ -837,7 +838,7 @@ async function submitCreateTask() {
     let animId = null;
     let resizeObserver = null;
 
-    const stopDotMatrix = () => {
+    stopDotMatrix = () => {
       if (animId) {
         window.cancelAnimationFrame(animId);
         animId = null;
@@ -1090,7 +1091,9 @@ async function submitCreateTask() {
     renderResultError(error.message);
     showToast(error.message);
   } finally {
-    stopDotMatrix();
+    try {
+      stopDotMatrix();
+    } catch (_) {}
     if (timerInterval) {
       window.clearInterval(timerInterval);
       timerInterval = null;
