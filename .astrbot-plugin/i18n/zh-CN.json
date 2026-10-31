@@ -46,7 +46,7 @@
       "imageOnly": "请提供图片文件",
       "addedReferences": "已添加 {count} 张参考图片",
       "readImageFailed": "参考图读取失败",
-      "generating": "正在生成图片，请稍候...",
+      "generating": "正在创建图像",
       "taskFailed": "图片处理失败",
       "taskFailedHint": "请查看错误信息后重试。",
       "taskDone": "图片处理完成",

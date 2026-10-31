@@ -824,21 +824,150 @@ async function submitCreateTask() {
       <div class="result-grid ${count === 1 ? "result-single" : "result-multi"}">
         ${Array.from({ length: count }, (_, i) => `
           <div class="result-card slot-loading" data-slot="${i}" style="aspect-ratio: ${slotAspect}">
-            <div class="aurora-ring-wrapper">
-              <div class="aurora-glow"></div>
-              <div class="aurora-ring">
-                <div class="aurora-ring-core"></div>
+            <div class="slot-top-bar">
+              <div class="slot-status-text">
+                ${count > 1 ? `#${i + 1} ` : ""}${t("generating", "正在创建图像")}
               </div>
-              <svg class="icon aurora-center-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
-              </svg>
             </div>
-            <span class="slot-loading-tag">${count > 1 ? `#${i + 1} · ` : ""}${t("generating", "正在生成图片，请稍候...")} <span class="slot-timer">0.0s</span></span>
+            <canvas class="dot-matrix-canvas"></canvas>
+            <div class="slot-bottom-badge">
+              <span class="badge-value slot-percent">0%</span>
+            </div>
           </div>
         `).join("")}
       </div>`;
 
+    let animId = null;
+    let resizeObserver = null;
+
+    const stopDotMatrix = () => {
+      if (animId) {
+        window.cancelAnimationFrame(animId);
+        animId = null;
+      }
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
+    };
+
+    const canvases = Array.from(resultArea.querySelectorAll("canvas.dot-matrix-canvas"));
+    if (canvases.length > 0) {
+      const updateCanvasSize = (cvs) => {
+        if (!cvs.isConnected) return;
+        const rect = cvs.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const w = Math.round(rect.width * dpr);
+        const h = Math.round(rect.height * dpr);
+        if (cvs.width !== w || cvs.height !== h) {
+          cvs.width = w;
+          cvs.height = h;
+        }
+      };
+
+      canvases.forEach(updateCanvasSize);
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(() => {
+          canvases.forEach(updateCanvasSize);
+        });
+        canvases.forEach((cvs) => resizeObserver.observe(cvs));
+      }
+
+      const drawDotMatrixLoop = () => {
+        const activeCards = resultArea.querySelectorAll(".result-card.slot-loading");
+        if (activeCards.length === 0) {
+          stopDotMatrix();
+          return;
+        }
+
+        const elapsedSec = (Date.now() - startTime) / 1000;
+        const t = elapsedSec * 1.0;
+        const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        const pct = Math.min(95, Math.floor(100 * (1 - Math.exp(-elapsedSec / 8.5))));
+
+        canvases.forEach((cvs) => {
+          if (!cvs.isConnected) return;
+          const card = cvs.closest(".slot-loading");
+          if (!card) return;
+
+          const pctEl = card.querySelector(".slot-percent");
+          if (pctEl) {
+            pctEl.textContent = `${pct}%`;
+          }
+
+          const ctx = cvs.getContext("2d");
+          const w = cvs.width;
+          const h = cvs.height;
+          if (!w || !h) return;
+
+          ctx.clearRect(0, 0, w, h);
+
+          const dpr = window.devicePixelRatio || 1;
+          const cssW = w / dpr;
+          const cssH = h / dpr;
+
+          ctx.save();
+          ctx.scale(dpr, dpr);
+
+          const cols = 23;
+          const rows = 23;
+          const paddingX = cssW * 0.12;
+          const paddingY = cssH * 0.12;
+          const availW = cssW - paddingX * 2;
+          const availH = cssH - paddingY * 2;
+          const stepX = availW / (cols - 1);
+          const stepY = availH / (rows - 1);
+
+          const cx = cssW / 2;
+          const cy = cssH / 2;
+          const maxDist = Math.hypot(availW / 2, availH / 2);
+
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const x = paddingX + c * stepX;
+              const y = paddingY + r * stepY;
+              const dx = x - cx;
+              const dy = y - cy;
+              const dist = Math.hypot(dx, dy);
+
+              if (dist > maxDist * 1.1) continue;
+
+              const wave = Math.sin(dist * 0.045 - t * 4.0);
+              const distNorm = Math.min(dist / maxDist, 1.0);
+              const baseDecay = Math.pow(1 - distNorm, 1.2);
+              const baseRadius = 0.9 + baseDecay * 1.8;
+              const waveAmp = (wave + 1) * 0.5;
+              const radius = baseRadius * (0.75 + waveAmp * 0.45);
+
+              const baseAlpha = 0.25 + baseDecay * 0.65;
+              const alpha = Math.min(1.0, Math.max(0.12, baseAlpha * (0.6 + waveAmp * 0.55)));
+
+              ctx.beginPath();
+              ctx.arc(x, y, radius, 0, Math.PI * 2);
+
+              if (isDark) {
+                ctx.fillStyle = `rgba(96, 165, 250, ${alpha})`;
+              } else {
+                const rCol = Math.round(26 + (160 - 26) * distNorm);
+                const gCol = Math.round(115 + (190 - 115) * distNorm);
+                const bCol = Math.round(232 + (250 - 232) * distNorm);
+                ctx.fillStyle = `rgba(${rCol}, ${gCol}, ${bCol}, ${alpha})`;
+              }
+              ctx.fill();
+            }
+          }
+
+          ctx.restore();
+        });
+
+        animId = window.requestAnimationFrame(drawDotMatrixLoop);
+      };
+
+      animId = window.requestAnimationFrame(drawDotMatrixLoop);
+    }
+
     $("hideResultBtn").addEventListener("click", () => {
+      stopDotMatrix();
       resultArea.classList.add("hidden");
     });
 
@@ -930,6 +1059,7 @@ async function submitCreateTask() {
     });
 
     await Promise.allSettled(taskPromises);
+    stopDotMatrix();
 
     if (timerInterval) {
       window.clearInterval(timerInterval);
@@ -969,6 +1099,7 @@ async function submitCreateTask() {
     renderResultError(error.message);
     showToast(error.message);
   } finally {
+    stopDotMatrix();
     if (timerInterval) {
       window.clearInterval(timerInterval);
       timerInterval = null;
