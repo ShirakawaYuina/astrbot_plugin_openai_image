@@ -29,6 +29,7 @@ const state = {
   createSize: "auto",
   createCount: 1,
   isGenerating: false,
+  optimizePrompt: false,
   lastGeneratedImages: [],
 };
 
@@ -294,43 +295,16 @@ async function savePromptOptimizerSettings() {
   }
 }
 
-async function optimizePrompt(button) {
+function togglePromptOptimizer(button) {
   if (state.isGenerating) return;
-  const textarea = $(button.dataset.promptTarget || "createPrompt");
-  const prompt = textarea.value.trim();
-  if (!prompt) {
-    showToast(t("promptRequired", "请先输入提示词"));
-    textarea.focus();
-    return;
-  }
-
-  const hasReferences = state.referenceImageFiles.length > 0;
-  const mode = hasReferences ? "edit" : "generate";
-  const label = button.querySelector("span");
-  const originalLabel = label ? label.textContent : button.textContent;
-  button.disabled = true;
-  textarea.disabled = true;
-  button.classList.add("is-loading");
-  if (label) label.textContent = t("optimizing", "优化中");
-  try {
-    const data = await bridge.apiPost("optimize-prompt", {
-      prompt,
-      mode,
-    });
-    textarea.value = data.prompt || "";
-    resizePromptTextarea(textarea);
-    showToast(t("promptOptimized", "提示词已优化"));
-  } catch (error) {
-    showToast(error.message);
-  } finally {
-    if (label) label.textContent = originalLabel;
-    button.classList.remove("is-loading");
-    textarea.disabled = false;
-    button.disabled = false;
-    textarea.focus();
-    $("createSubmitBtn").disabled =
-      !textarea.value.trim() || state.isGenerating;
-  }
+  state.optimizePrompt = !state.optimizePrompt;
+  button.classList.toggle("is-active", state.optimizePrompt);
+  button.setAttribute("aria-pressed", String(state.optimizePrompt));
+  showToast(
+    state.optimizePrompt
+      ? t("promptOptimized", "提示词优化已开启（发送时自动优化）")
+      : "提示词优化已关闭",
+  );
 }
 
 function renderGallery() {
@@ -996,8 +970,34 @@ async function submitCreateTask() {
 
     const taskPromises = Array.from({ length: count }, async (_, index) => {
       try {
+        let slotPrompt = finalPrompt;
+
+        if (state.optimizePrompt) {
+          const slotCard = resultArea.querySelector(`.result-card[data-slot="${index}"]`);
+          const statusTextNode = slotCard ? slotCard.querySelector(".slot-status-text") : null;
+          if (statusTextNode) {
+            statusTextNode.textContent = `${count > 1 ? `#${index + 1} ` : ""}${t("optimizing", "优化中...")}`;
+          }
+
+          try {
+            const optData = await bridge.apiPost("optimize-prompt", {
+              prompt: finalPrompt,
+              mode: hasReferences ? "edit" : "generate",
+            });
+            if (optData && optData.prompt) {
+              slotPrompt = optData.prompt;
+            }
+          } catch (optErr) {
+            console.warn(`[Slot ${index}] 优化提示词失败，降级使用原提示词:`, optErr);
+          }
+
+          if (statusTextNode) {
+            statusTextNode.textContent = `${count > 1 ? `#${index + 1} ` : ""}${t("generating", "正在创建图像")}`;
+          }
+        }
+
         const data = await bridge.apiPost(hasReferences ? "edit" : "generate", {
-          prompt: finalPrompt,
+          prompt: slotPrompt,
           size: sizeValue,
           quality,
           moderation,
@@ -1194,7 +1194,7 @@ $("createSubmitBtn").addEventListener("click", () => {
 });
 
 $("optimizePromptBtn").addEventListener("click", () => {
-  optimizePrompt($("optimizePromptBtn"));
+  togglePromptOptimizer($("optimizePromptBtn"));
 });
 
 $("sizeDropdownBtn").addEventListener("click", (event) => {

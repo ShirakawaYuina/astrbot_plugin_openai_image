@@ -838,6 +838,20 @@ textarea {
   color: var(--primary);
 }
 
+.optimize-btn.is-active {
+  background: rgba(43, 90, 237, 0.12);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+[data-theme="dark"] .optimize-btn.is-active {
+  background: rgba(99, 140, 255, 0.2);
+  border-color: #638cff;
+  color: #8bb2ff;
+  box-shadow: 0 0 0 1px #638cff;
+}
+
 .optimize-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
