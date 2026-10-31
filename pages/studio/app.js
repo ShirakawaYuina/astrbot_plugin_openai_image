@@ -830,9 +830,6 @@ async function submitCreateTask() {
               </div>
             </div>
             <canvas class="dot-matrix-canvas"></canvas>
-            <div class="slot-bottom-badge">
-              <span class="badge-value slot-percent">0%</span>
-            </div>
           </div>
         `).join("")}
       </div>`;
@@ -883,17 +880,11 @@ async function submitCreateTask() {
         const elapsedSec = (Date.now() - startTime) / 1000;
         const t = elapsedSec * 1.0;
         const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-        const pct = Math.min(95, Math.floor(100 * (1 - Math.exp(-elapsedSec / 8.5))));
 
         canvases.forEach((cvs) => {
           if (!cvs.isConnected) return;
           const card = cvs.closest(".slot-loading");
           if (!card) return;
-
-          const pctEl = card.querySelector(".slot-percent");
-          if (pctEl) {
-            pctEl.textContent = `${pct}%`;
-          }
 
           const ctx = cvs.getContext("2d");
           const w = cvs.width;
