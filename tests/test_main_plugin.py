@@ -1248,6 +1248,51 @@ def test_format_elapsed_text():
     assert plugin._format_elapsed_text(0) == "生成耗时：0.0 秒"
     assert plugin._format_elapsed_text(1234) == "生成耗时：1.2 秒"
     assert plugin._format_elapsed_text(5890) == "生成耗时：5.9 秒"
+    assert (
+        plugin._format_elapsed_text(2500, model="qwen-image-2.1")
+        == "调用模型：qwen-image-2.1 | 生成耗时：2.5 秒"
+    )
+    assert plugin._format_elapsed_text(None, model="qwen-image-2.1") == "调用模型：qwen-image-2.1"
+
+
+@pytest.mark.asyncio
+async def test_finalize_results_includes_model_in_summary_and_prefix(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(context=SimpleNamespace(), config={})
+    plugin.presenter = SimpleNamespace(send_images=AsyncMock())
+
+    img1 = tmp_path / "img1.png"
+    img1.write_bytes(b"1")
+
+    event = _make_event()
+    task_results = [
+        {
+            "success": True,
+            "payload": str(img1),
+            "model": "qwen-image-2.1",
+            "timings": {
+                "elapsed_ms": 2500,
+                "total_elapsed_ms": 2500,
+            },
+        },
+    ]
+
+    result = await plugin._finalize_results(
+        event=event,
+        task_id="task-model",
+        mode="generate",
+        task_results=task_results,
+        command_start=0,
+        send_user_message=False,
+        results_already_sent=False,
+    )
+
+    assert result["status"] == "success"
+    assert result["summary"] == "已生成 1 张图片（调用模型：qwen-image-2.1）"
+    assert result["models"] == ["qwen-image-2.1"]
+    plugin.presenter.send_images.assert_awaited_once_with(
+        event, [img1], text_prefix="调用模型：qwen-image-2.1 | 生成耗时：2.5 秒"
+    )
 
 
 def test_build_pending_message_with_task_counts():

@@ -1016,15 +1016,17 @@ class OpenAIImagePlugin(Star):
                 if prompts and len(prompts) >= index
                 else prompt
             )
+            used_model: str | None = None
 
             async def _execute_generate() -> Path:
+                nonlocal used_model
                 primary = self._get_active_image_provider()
                 fallback = self._get_fallback_image_provider()
                 primary_prompt = self._maybe_apply_local_prompt_prefix(
                     cur_prompt, provider=primary, mode="generate"
                 )
                 try:
-                    return await self._generate_service.generate(
+                    res = await self._generate_service.generate(
                         model=primary.model,
                         prompt=primary_prompt,
                         endpoint_type=primary.endpoint_type,
@@ -1032,6 +1034,8 @@ class OpenAIImagePlugin(Star):
                         quality=quality,
                         moderation=moderation,
                     )
+                    used_model = primary.model
+                    return res
                 except Exception as exc:
                     if fallback is None or is_same_model(primary, fallback):
                         raise
@@ -1052,7 +1056,7 @@ class OpenAIImagePlugin(Star):
                         fallback_prompt = self._maybe_apply_local_prompt_prefix(
                             cur_prompt, provider=fallback, mode="generate"
                         )
-                        return await fallback_service.generate(
+                        res = await fallback_service.generate(
                             model=fallback.model,
                             prompt=fallback_prompt,
                             endpoint_type=fallback.endpoint_type,
@@ -1060,6 +1064,8 @@ class OpenAIImagePlugin(Star):
                             quality=quality,
                             moderation=moderation,
                         )
+                        used_model = fallback.model
+                        return res
                     except Exception as fallback_exc:
                         raise RuntimeError(
                             f"主模型 [{primary.model}] 调用失败: {exc}；回退模型 [{fallback.model}] 调用失败: {fallback_exc}"
@@ -1072,6 +1078,8 @@ class OpenAIImagePlugin(Star):
                 stage_name="request",
                 job_coro=_execute_generate,
             )
+            if used_model:
+                result["model"] = used_model
             self._log_task_result(
                 task_id=task_id,
                 job_index=index,
@@ -1113,15 +1121,17 @@ class OpenAIImagePlugin(Star):
                 if prompts and len(prompts) >= index
                 else prompt
             )
+            used_model: str | None = None
 
             async def _execute_edit() -> Path:
+                nonlocal used_model
                 primary = self._get_active_image_provider()
                 fallback = self._get_fallback_image_provider()
                 primary_prompt = self._maybe_apply_local_prompt_prefix(
                     cur_prompt, provider=primary, mode="edit"
                 )
                 try:
-                    return await self._edit_service.edit(
+                    res = await self._edit_service.edit(
                         model=primary.model,
                         prompt=primary_prompt,
                         data_urls=data_urls,
@@ -1130,6 +1140,8 @@ class OpenAIImagePlugin(Star):
                         quality=quality,
                         moderation=moderation,
                     )
+                    used_model = primary.model
+                    return res
                 except Exception as exc:
                     if fallback is None or is_same_model(primary, fallback):
                         raise
@@ -1150,7 +1162,7 @@ class OpenAIImagePlugin(Star):
                         fallback_prompt = self._maybe_apply_local_prompt_prefix(
                             cur_prompt, provider=fallback, mode="edit"
                         )
-                        return await fallback_service.edit(
+                        res = await fallback_service.edit(
                             model=fallback.model,
                             prompt=fallback_prompt,
                             data_urls=data_urls,
@@ -1159,6 +1171,8 @@ class OpenAIImagePlugin(Star):
                             quality=quality,
                             moderation=moderation,
                         )
+                        used_model = fallback.model
+                        return res
                     except Exception as fallback_exc:
                         raise RuntimeError(
                             f"主模型 [{primary.model}] 调用失败: {exc}；回退模型 [{fallback.model}] 调用失败: {fallback_exc}"
@@ -1171,6 +1185,8 @@ class OpenAIImagePlugin(Star):
                 stage_name="request",
                 job_coro=_execute_edit,
             )
+            if used_model:
+                result["model"] = used_model
             self._log_task_result(
                 task_id=task_id,
                 job_index=index,
@@ -1211,10 +1227,8 @@ class OpenAIImagePlugin(Star):
             if timings.get("elapsed_ms") is not None
             else timings.get("total_elapsed_ms")
         )
-        text_prefix = (
-            self._format_elapsed_text(elapsed_ms)
-            if elapsed_ms is not None
-            else ""
+        text_prefix = self._format_elapsed_text(
+            elapsed_ms, model=result.get("model")
         )
         send_start = time.perf_counter()
         try:
@@ -1300,10 +1314,8 @@ class OpenAIImagePlugin(Star):
                     if timings.get("elapsed_ms") is not None
                     else timings.get("total_elapsed_ms")
                 )
-                text_prefix = (
-                    self._format_elapsed_text(elapsed_ms)
-                    if elapsed_ms is not None
-                    else ""
+                text_prefix = self._format_elapsed_text(
+                    elapsed_ms, model=result.get("model")
                 )
                 send_start = time.perf_counter()
                 try:
@@ -1341,9 +1353,20 @@ class OpenAIImagePlugin(Star):
             len(failed_results),
         )
 
-        summary = f"已生成 {len(success_paths)} 张图片"
+        used_models = [
+            str(result.get("model"))
+            for result in task_results
+            if result.get("success") and result.get("model")
+        ]
+        unique_models = list(dict.fromkeys(used_models))
+        model_suffix = (
+            f"（调用模型：{', '.join(unique_models)}）"
+            if unique_models
+            else ""
+        )
+        summary = f"已生成 {len(success_paths)} 张图片{model_suffix}"
         if mode == "edit":
-            summary = f"已编辑 {len(success_paths)} 张图片"
+            summary = f"已编辑 {len(success_paths)} 张图片{model_suffix}"
         if failed_results:
             summary = f"{summary}，失败 {len(failed_results)} 张"
             if send_user_message:
@@ -1352,7 +1375,11 @@ class OpenAIImagePlugin(Star):
                         f"本次共成功 {len(success_paths)} 张，失败 {len(failed_results)} 张。"
                     )
                 )
-        return {"status": "success", "summary": summary}
+        return {
+            "status": "success",
+            "summary": summary,
+            "models": unique_models,
+        }
 
     async def _build_image_data_url(self, image_component: Any) -> str:
         """将 AstrBot 图片组件转换为 data URL。"""
@@ -1887,9 +1914,10 @@ class OpenAIImagePlugin(Star):
         elapsed_ms = timings.get("elapsed_ms", timings.get("total_elapsed_ms", 0))
         if result.get("success"):
             logger.info(
-                "[OpenAIImage][task][task_id=%s][job=%s] success queue_wait_ms=%s elapsed_ms=%s total_elapsed_ms=%s",
+                "[OpenAIImage][task][task_id=%s][job=%s] success model=%s queue_wait_ms=%s elapsed_ms=%s total_elapsed_ms=%s",
                 task_id,
                 job_index,
+                result.get("model", ""),
                 timings.get("queue_wait_ms", 0),
                 elapsed_ms,
                 timings.get("total_elapsed_ms", 0),
@@ -2007,13 +2035,19 @@ class OpenAIImagePlugin(Star):
         return f"{text[: limit - 3].rstrip()}..."
 
     @staticmethod
-    def _format_elapsed_text(elapsed_ms: int | float | None) -> str:
-        """格式化单张图片的生成耗时文本。"""
+    def _format_elapsed_text(
+        elapsed_ms: int | float | None,
+        model: str | None = None,
+    ) -> str:
+        """格式化单张图片的调用模型与生成耗时文本。"""
 
-        if elapsed_ms is None:
-            return ""
-        seconds = max(0.0, float(elapsed_ms) / 1000)
-        return f"生成耗时：{seconds:.1f} 秒"
+        parts: list[str] = []
+        if model:
+            parts.append(f"调用模型：{model}")
+        if elapsed_ms is not None:
+            seconds = max(0.0, float(elapsed_ms) / 1000)
+            parts.append(f"生成耗时：{seconds:.1f} 秒")
+        return " | ".join(parts)
 
     def _build_edit_pending_result(
         self, prompt: str, active_count: int | None = None
