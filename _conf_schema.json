@@ -96,10 +96,10 @@
         }
     },
     "enable_command_prompt_optimization": {
-        "description": "指令提示词优化",
+        "description": "指令与工具提示词优化",
         "type": "bool",
         "default": false,
-        "hint": "开启后，用户在聊天中使用 /oaiimg、/oaiedit、/oaiqlogo 等指令时，会自动调用所选大模型将提示词扩写并翻译为纯英文的高质量生图提示词（丰富场景、构图、光影、动作、表情等），再提交生图/修图。仅对指令调用生效，LLM 工具自主调用不受影响。"
+        "hint": "开启后，用户在聊天中使用 /oaiimg、/oaiedit、/oaiqlogo 等指令或通过大模型工具调用生成多张图片（count > 1）时，会自动调用所选大模型将提示词扩写并翻译为纯英文的高质量生图提示词（丰富场景、构图、光影、动作、表情等），且为每张图片独立发散生成各具创意的专属提示词后再提交生图/修图。"
     },
     "command_prompt_optimizer_provider_id": {
         "description": "指令提示词优化模型",

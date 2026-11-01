@@ -2166,3 +2166,102 @@ async def test_run_edit_jobs_uses_individual_prompts_when_provided(tmp_path: Pat
     assert calls[0].kwargs["prompt"] == "edit_1"
     assert calls[1].kwargs["prompt"] == "edit_2"
 
+
+@pytest.mark.asyncio
+async def test_openai_generate_image_tool_multi_count_with_prompt_optimization():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={"enable_command_prompt_optimization": True},
+    )
+    plugin._execute_generate_flow = AsyncMock(
+        return_value={"status": "success", "summary": "已生成 2 张图片"}
+    )
+    event = _make_event()
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        side_effect=["opt prompt 1", "opt prompt 2"],
+    ) as mock_opt:
+        summary = await plugin.openai_generate_image_tool(
+            event, prompt="A fantasy landscape", count=2
+        )
+
+    assert summary == "已生成 2 张图片"
+    assert mock_opt.await_count == 2
+    plugin._execute_generate_flow.assert_awaited_once()
+    kwargs = plugin._execute_generate_flow.await_args.kwargs
+    assert kwargs["count"] == 2
+    assert kwargs["prompts"] == ["opt prompt 1", "opt prompt 2"]
+
+
+@pytest.mark.asyncio
+async def test_openai_edit_image_tool_multi_count_with_prompt_optimization():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={"enable_command_prompt_optimization": True},
+    )
+    plugin._execute_edit_flow = AsyncMock(
+        return_value={"status": "success", "summary": "已编辑 2 张图片"}
+    )
+    event = _make_event(
+        message_components=[SimpleNamespace(type="image", url="http://example.com/1.png")]
+    )
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        side_effect=["edit opt 1", "edit opt 2"],
+    ) as mock_opt:
+        summary = await plugin.openai_edit_image_tool(
+            event, prompt="Make it sunny", count=2
+        )
+
+    assert summary == "已编辑 2 张图片"
+    assert mock_opt.await_count == 2
+    plugin._execute_edit_flow.assert_awaited_once()
+    kwargs = plugin._execute_edit_flow.await_args.kwargs
+    assert kwargs["count"] == 2
+    assert kwargs["prompts"] == ["edit opt 1", "edit opt 2"]
+
+
+@pytest.mark.asyncio
+async def test_openai_edit_robot_figure_image_tool_multi_count_with_prompt_optimization(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={"enable_command_prompt_optimization": True},
+    )
+    figure_file = tmp_path / "figure.png"
+    figure_file.write_bytes(b"robot")
+    plugin._get_figure_image_path = lambda: figure_file
+
+    plugin._execute_figure_edit_flow = AsyncMock(
+        return_value={"status": "success", "summary": "机器人形象已更新"}
+    )
+    event = _make_event()
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        side_effect=["robot opt 1", "robot opt 2"],
+    ) as mock_opt:
+        reply = await plugin.openai_edit_robot_figure_image_tool(
+            event, prompt="Cyberpunk hero", count=2
+        )
+
+    assert "哇，这个感觉还挺像我的" in reply
+    assert mock_opt.await_count == 2
+    plugin._execute_figure_edit_flow.assert_awaited_once()
+    kwargs = plugin._execute_figure_edit_flow.await_args.kwargs
+    assert kwargs["count"] == 2
+    assert len(kwargs["prompts"]) == 2
+    assert "robot opt 1" in kwargs["prompts"][0]
+    assert "robot opt 2" in kwargs["prompts"][1]
+
+

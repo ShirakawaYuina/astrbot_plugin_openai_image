@@ -191,9 +191,30 @@ class OpenAIImagePlugin(Star):
         """
         # LLM 调用时可能传递 float 类型（如 1.0），需转为 int
         count = int(count)
+        raw_prompt = str(prompt or "").strip()
         clean_prompt = self._maybe_apply_local_prompt_prefix(
-            str(prompt or "").strip(), mode="generate"
+            raw_prompt, mode="generate"
         )
+
+        if count > 1 and bool(
+            self.config.get("enable_command_prompt_optimization", False)
+        ):
+            optimized_prompts = await asyncio.gather(
+                *[
+                    self._maybe_optimize_command_prompt(
+                        raw_prompt,
+                        mode="generate",
+                        require_aspect_ratio=True,
+                    )
+                    for _ in range(count)
+                ]
+            )
+            prompts = [
+                self._maybe_apply_local_prompt_prefix(p, mode="generate")
+                for p in optimized_prompts
+            ]
+        else:
+            prompts = None
 
         active_count = getattr(self._task_service, "active_tasks", 0) + count
         await self._send_pending_message(
@@ -208,6 +229,7 @@ class OpenAIImagePlugin(Star):
             count=count,
             size=None,
             send_user_message=False,
+            prompts=prompts,
         )
         return str(result["summary"])
 
@@ -230,9 +252,29 @@ class OpenAIImagePlugin(Star):
         if extract_first_image_component(event) is None:
             return "未检测到图片，请在当前消息中携带图片或回复一张图片后再调用图片编辑工具。"
 
+        raw_prompt = str(prompt or "").strip()
         clean_prompt = self._maybe_apply_local_prompt_prefix(
-            str(prompt or "").strip(), mode="edit"
+            raw_prompt, mode="edit"
         )
+
+        if count > 1 and bool(
+            self.config.get("enable_command_prompt_optimization", False)
+        ):
+            optimized_prompts = await asyncio.gather(
+                *[
+                    self._maybe_optimize_command_prompt(
+                        raw_prompt, mode="edit"
+                    )
+                    for _ in range(count)
+                ]
+            )
+            prompts = [
+                self._maybe_apply_local_prompt_prefix(p, mode="edit")
+                for p in optimized_prompts
+            ]
+        else:
+            prompts = None
+
         active_count = getattr(self._task_service, "active_tasks", 0) + count
         await self._send_pending_message(
             event,
@@ -246,6 +288,7 @@ class OpenAIImagePlugin(Star):
             count=count,
             size=None,
             send_user_message=False,
+            prompts=prompts,
         )
         return str(result["summary"])
 
@@ -281,10 +324,32 @@ class OpenAIImagePlugin(Star):
                 "尚未设置机器人形象图，请先回复或发送一张图片并使用 /oaifigure 设置。"
             )
 
+        raw_prompt = str(prompt or "").strip()
         clean_prompt = self._maybe_apply_local_prompt_prefix(
-            str(prompt or "").strip(), mode="edit"
+            raw_prompt, mode="edit"
         )
         parsed_count = int(count)
+
+        if parsed_count > 1 and bool(
+            self.config.get("enable_command_prompt_optimization", False)
+        ):
+            optimized_prompts = await asyncio.gather(
+                *[
+                    self._maybe_optimize_command_prompt(
+                        raw_prompt, mode="edit"
+                    )
+                    for _ in range(parsed_count)
+                ]
+            )
+            prompts = [
+                self._maybe_apply_local_prompt_prefix(
+                    self._build_robot_figure_edit_prompt(p), mode="edit"
+                )
+                for p in optimized_prompts
+            ]
+        else:
+            prompts = None
+
         active_count = getattr(self._task_service, "active_tasks", 0) + parsed_count
         await self._send_pending_message(
             event,
@@ -300,6 +365,7 @@ class OpenAIImagePlugin(Star):
             quality=quality,
             moderation=moderation,
             send_user_message=False,
+            prompts=prompts,
         )
         return self._build_robot_figure_tool_reply(result)
 
