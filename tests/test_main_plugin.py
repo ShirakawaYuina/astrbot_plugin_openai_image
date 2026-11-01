@@ -1898,6 +1898,74 @@ async def test_handle_generate_command_with_prompt_optimization():
     assert "photorealistic red sports car on highway at dusk" in event._sent_messages[0]
 
 
+@pytest.mark.asyncio
+async def test_handle_generate_command_with_opt_flag_overrides_disabled_config():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={"enable_command_prompt_optimization": False},
+    )
+    plugin._execute_generate_flow = AsyncMock()
+    event = _make_event(platform_name="other")
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        return_value="optimized sports car",
+    ) as mock_opt:
+        await plugin._handle_generate_command(event, raw_prompt="--opt 一辆跑车")
+
+    mock_opt.assert_awaited_once()
+    assert plugin._execute_generate_flow.await_args.kwargs["prompt"] == "optimized sports car"
+
+
+@pytest.mark.asyncio
+async def test_handle_generate_command_with_raw_flag_overrides_enabled_config():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={"enable_command_prompt_optimization": True},
+    )
+    plugin._execute_generate_flow = AsyncMock()
+    event = _make_event(platform_name="other")
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+    ) as mock_opt:
+        await plugin._handle_generate_command(event, raw_prompt="--raw 1girl, solo, raw tags")
+
+    mock_opt.assert_not_called()
+    assert plugin._execute_generate_flow.await_args.kwargs["prompt"] == "1girl, solo, raw tags"
+
+
+@pytest.mark.asyncio
+async def test_handle_generate_command_non_admin_can_use_opt_flag():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "multi_image_command_admin_only": True,
+            "enable_command_prompt_optimization": False,
+        },
+    )
+    plugin._execute_generate_flow = AsyncMock()
+    event = _make_event(platform_name="other", is_admin=False)
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        return_value="optimized cyberpunk cat",
+    ) as mock_opt:
+        await plugin._handle_generate_command(event, raw_prompt="--opt 赛博朋克猫")
+
+    mock_opt.assert_awaited_once()
+    assert plugin._execute_generate_flow.await_args.kwargs["prompt"] == "optimized cyberpunk cat"
+
+
 def test_conf_schema_defines_command_prompt_optimization():
     import json
 

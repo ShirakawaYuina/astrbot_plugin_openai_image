@@ -14,6 +14,7 @@ class ParsedCommand:
     size: str | None = None
     quality: str = "auto"
     moderation: str = "low"
+    optimize_prompt: bool | None = None
 
 
 @dataclass(slots=True)

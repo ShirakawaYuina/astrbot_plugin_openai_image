@@ -148,3 +148,46 @@ def test_parse_command_rejects_empty_prompt():
 
     with pytest.raises(ValueError, match="提示词不能为空"):
         module.parse_command_payload("2")
+
+
+def test_parse_command_reads_opt_and_raw_options():
+    module = _load_module()
+
+    parsed_default = module.parse_command_payload("生成一只猫")
+    assert parsed_default.optimize_prompt is None
+    assert parsed_default.prompt == "生成一只猫"
+
+    parsed_opt = module.parse_command_payload("--opt 生成一只猫")
+    assert parsed_opt.optimize_prompt is True
+    assert parsed_opt.prompt == "生成一只猫"
+
+    parsed_raw = module.parse_command_payload("--raw 生成一只猫")
+    assert parsed_raw.optimize_prompt is False
+    assert parsed_raw.prompt == "生成一只猫"
+
+    parsed_combined = module.parse_command_payload("2 --size landscape --opt 雨夜街道")
+    assert parsed_combined.count == 2
+    assert parsed_combined.size == "1536x1024"
+    assert parsed_combined.optimize_prompt is True
+    assert parsed_combined.prompt == "雨夜街道"
+
+
+def test_parse_command_non_admin_allows_opt_and_raw_but_keeps_admin_options():
+    module = _load_module()
+
+    parsed = module.parse_command_payload(
+        "2 --size 1024x1536 --opt 生成竖版角色图",
+        allow_admin_options=False,
+    )
+    assert parsed.count == 1
+    assert parsed.size is None
+    assert parsed.optimize_prompt is True
+    assert parsed.prompt == "2 --size 1024x1536 生成竖版角色图"
+
+    parsed_raw = module.parse_command_payload(
+        "--raw 1girl, solo, masterpiece",
+        allow_admin_options=False,
+    )
+    assert parsed_raw.count == 1
+    assert parsed_raw.optimize_prompt is False
+    assert parsed_raw.prompt == "1girl, solo, masterpiece"

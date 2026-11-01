@@ -114,6 +114,8 @@ class OpenAIImagePlugin(Star):
         用法：
         - /oaiimg <提示词>
         - /oaiimg 2 <提示词>
+        - /oaiimg --opt <提示词> (强制开启优化)
+        - /oaiimg --raw <提示词> (强制关闭优化)
         """
 
         event.should_call_llm(True)
@@ -133,6 +135,8 @@ class OpenAIImagePlugin(Star):
         用法：
         - /oaiedit <提示词>
         - /oaiedit 2 <提示词>
+        - /oaiedit --opt <提示词> (强制开启优化)
+        - /oaiedit --raw <提示词> (强制关闭优化)
         - 需要在同条消息带图，或回复一张图片后执行
         """
 
@@ -405,9 +409,13 @@ class OpenAIImagePlugin(Star):
             await event.send(event.plain_result(f"参数错误：{exc}"))
             return
 
-        if parsed_command.count > 1 and bool(
-            self.config.get("enable_command_prompt_optimization", False)
-        ):
+        should_optimize = (
+            parsed_command.optimize_prompt
+            if parsed_command.optimize_prompt is not None
+            else bool(self.config.get("enable_command_prompt_optimization", False))
+        )
+
+        if parsed_command.count > 1 and should_optimize:
             optimized_prompts = await asyncio.gather(
                 *[
                     self._maybe_optimize_command_prompt(
@@ -415,6 +423,7 @@ class OpenAIImagePlugin(Star):
                         mode="generate",
                         require_aspect_ratio=True,
                         size=parsed_command.size,
+                        enabled=True,
                     )
                     for _ in range(parsed_command.count)
                 ]
@@ -430,6 +439,7 @@ class OpenAIImagePlugin(Star):
                 mode="generate",
                 require_aspect_ratio=True,
                 size=parsed_command.size,
+                enabled=should_optimize,
             )
             final_prompt = self._maybe_apply_local_prompt_prefix(
                 final_prompt, mode="generate"
@@ -469,6 +479,11 @@ class OpenAIImagePlugin(Star):
             return
 
         preset_prompt = self._find_edit_preset_prompt(parsed_command.prompt)
+        should_optimize = (
+            parsed_command.optimize_prompt
+            if parsed_command.optimize_prompt is not None
+            else bool(self.config.get("enable_command_prompt_optimization", False))
+        )
         if preset_prompt is not None:
             logger.info(
                 "[OpenAIImage][edit] 提示词命中预设，直通使用预设提示词（跳过优化）: before=%s after=%s",
@@ -480,13 +495,13 @@ class OpenAIImagePlugin(Star):
                 final_prompt, mode="edit"
             )
             prompts = None
-        elif parsed_command.count > 1 and bool(
-            self.config.get("enable_command_prompt_optimization", False)
-        ):
+        elif parsed_command.count > 1 and should_optimize:
             optimized_prompts = await asyncio.gather(
                 *[
                     self._maybe_optimize_command_prompt(
-                        parsed_command.prompt, mode="edit"
+                        parsed_command.prompt,
+                        mode="edit",
+                        enabled=True,
                     )
                     for _ in range(parsed_command.count)
                 ]
@@ -498,7 +513,9 @@ class OpenAIImagePlugin(Star):
             final_prompt = prompts[0]
         else:
             final_prompt = await self._maybe_optimize_command_prompt(
-                parsed_command.prompt, mode="edit"
+                parsed_command.prompt,
+                mode="edit",
+                enabled=should_optimize,
             )
             final_prompt = self._maybe_apply_local_prompt_prefix(
                 final_prompt, mode="edit"
@@ -562,6 +579,11 @@ class OpenAIImagePlugin(Star):
             return
 
         preset_prompt = self._find_edit_preset_prompt(parsed_command.prompt)
+        should_optimize = (
+            parsed_command.optimize_prompt
+            if parsed_command.optimize_prompt is not None
+            else bool(self.config.get("enable_command_prompt_optimization", False))
+        )
         if preset_prompt is not None:
             logger.info(
                 "[OpenAIImage][qlogo] 提示词命中预设，直通使用预设提示词（跳过优化）: before=%s after=%s",
@@ -573,13 +595,13 @@ class OpenAIImagePlugin(Star):
                 final_prompt, mode="edit"
             )
             prompts = None
-        elif parsed_command.count > 1 and bool(
-            self.config.get("enable_command_prompt_optimization", False)
-        ):
+        elif parsed_command.count > 1 and should_optimize:
             optimized_prompts = await asyncio.gather(
                 *[
                     self._maybe_optimize_command_prompt(
-                        parsed_command.prompt, mode="edit"
+                        parsed_command.prompt,
+                        mode="edit",
+                        enabled=True,
                     )
                     for _ in range(parsed_command.count)
                 ]
@@ -591,7 +613,9 @@ class OpenAIImagePlugin(Star):
             final_prompt = prompts[0]
         else:
             final_prompt = await self._maybe_optimize_command_prompt(
-                parsed_command.prompt, mode="edit"
+                parsed_command.prompt,
+                mode="edit",
+                enabled=should_optimize,
             )
             final_prompt = self._maybe_apply_local_prompt_prefix(
                 final_prompt, mode="edit"
@@ -1687,19 +1711,18 @@ class OpenAIImagePlugin(Star):
     ) -> ParsedCommand:
         """按调用者权限解析命令参数。
 
-        Bot 管理员保持完整参数解析，普通成员在开启限制时则不拆解任何参数。
-        这样普通成员输入的 `2`、`--size`、`-q`、`-m` 会完整保留到提示词里，
-        只是不再影响生成数量、尺寸、质量和审核设置。
+        Bot 管理员保持完整参数解析；普通成员在开启限制时，数量、尺寸、质量与审核
+        等管理参数保留在提示词中不生效，但 `--opt` 与 `--raw` 优化开关参数始终对所有用户生效。
         """
 
         clean_raw_prompt = str(raw_prompt or "").strip()
         if not clean_raw_prompt:
             raise ValueError("提示词不能为空")
 
-        if self._should_parse_command_options(event):
-            return parse_command_payload(clean_raw_prompt)
-
-        return ParsedCommand(count=1, prompt=clean_raw_prompt)
+        allow_admin_options = self._should_parse_command_options(event)
+        return parse_command_payload(
+            clean_raw_prompt, allow_admin_options=allow_admin_options
+        )
 
     def _should_parse_command_options(self, event: AstrMessageEvent) -> bool:
         """判断当前调用者是否允许拆解命令参数。
@@ -1800,6 +1823,7 @@ class OpenAIImagePlugin(Star):
         mode: str = "generate",
         require_aspect_ratio: bool = False,
         size: str | None = None,
+        enabled: bool | None = None,
     ) -> str:
         """若开启了指令提示词优化，则调用配置的对话模型对提示词进行扩写优化。
 
@@ -1808,6 +1832,7 @@ class OpenAIImagePlugin(Star):
             mode: 任务模式，"generate" 或 "edit"。
             require_aspect_ratio: 是否强制要求包含严格格式的画面比例（如 1:1、16:9）。
             size: 可选的生成尺寸参数，用于推断默认画面比例。
+            enabled: 是否显式开启或关闭优化；为 None 时沿用配置 `enable_command_prompt_optimization`。
 
         Returns:
             优化后的提示词；未开启或优化失败时返回原提示词。
@@ -1816,7 +1841,12 @@ class OpenAIImagePlugin(Star):
         if not clean_prompt:
             return clean_prompt
 
-        if not bool(self.config.get("enable_command_prompt_optimization", False)):
+        is_enabled = (
+            enabled
+            if enabled is not None
+            else bool(self.config.get("enable_command_prompt_optimization", False))
+        )
+        if not is_enabled:
             return clean_prompt
 
         provider_id = str(

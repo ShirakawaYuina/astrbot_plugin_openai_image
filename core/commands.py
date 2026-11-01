@@ -30,8 +30,11 @@ DEFAULT_IMAGE_QUALITY = "auto"
 DEFAULT_IMAGE_MODERATION = "low"
 
 
-def parse_command_payload(text: str) -> ParsedCommand:
-    """解析图片命令中的数量、尺寸与提示词。"""
+def parse_command_payload(
+    text: str,
+    allow_admin_options: bool = True,
+) -> ParsedCommand:
+    """解析图片命令中的数量、尺寸、质量、审核、优化标志与提示词。"""
 
     raw_text = str(text or "").strip()
     if not raw_text:
@@ -42,8 +45,9 @@ def parse_command_payload(text: str) -> ParsedCommand:
     size: str | None = None
     quality = DEFAULT_IMAGE_QUALITY
     moderation = DEFAULT_IMAGE_MODERATION
+    optimize_prompt: bool | None = None
 
-    if tokens and tokens[0].lstrip("-").isdigit():
+    if allow_admin_options and tokens and tokens[0].lstrip("-").isdigit():
         count = int(tokens.pop(0))
         if count <= 0:
             raise ValueError("数量必须为正整数")
@@ -52,36 +56,45 @@ def parse_command_payload(text: str) -> ParsedCommand:
     token_index = 0
     while token_index < len(tokens):
         token = tokens[token_index]
-        if token in {"--size", "-s"}:
-            if token_index + 1 >= len(tokens):
-                raise ValueError("尺寸参数不能为空")
-            size = normalize_output_size(tokens[token_index + 1])
-            token_index += 2
-            continue
-        if token.startswith("--size="):
-            size = normalize_output_size(token.partition("=")[2])
+        if token == "--opt":
+            optimize_prompt = True
             token_index += 1
             continue
-        if token in {"--quality", "-q"}:
-            if token_index + 1 >= len(tokens):
-                raise ValueError("质量参数不能为空")
-            quality = normalize_image_quality(tokens[token_index + 1])
-            token_index += 2
-            continue
-        if token.startswith("--quality="):
-            quality = normalize_image_quality(token.partition("=")[2])
+        if token == "--raw":
+            optimize_prompt = False
             token_index += 1
             continue
-        if token in {"--moderation", "-m"}:
-            if token_index + 1 >= len(tokens):
-                raise ValueError("审核参数不能为空")
-            moderation = normalize_image_moderation(tokens[token_index + 1])
-            token_index += 2
-            continue
-        if token.startswith("--moderation="):
-            moderation = normalize_image_moderation(token.partition("=")[2])
-            token_index += 1
-            continue
+        if allow_admin_options:
+            if token in {"--size", "-s"}:
+                if token_index + 1 >= len(tokens):
+                    raise ValueError("尺寸参数不能为空")
+                size = normalize_output_size(tokens[token_index + 1])
+                token_index += 2
+                continue
+            if token.startswith("--size="):
+                size = normalize_output_size(token.partition("=")[2])
+                token_index += 1
+                continue
+            if token in {"--quality", "-q"}:
+                if token_index + 1 >= len(tokens):
+                    raise ValueError("质量参数不能为空")
+                quality = normalize_image_quality(tokens[token_index + 1])
+                token_index += 2
+                continue
+            if token.startswith("--quality="):
+                quality = normalize_image_quality(token.partition("=")[2])
+                token_index += 1
+                continue
+            if token in {"--moderation", "-m"}:
+                if token_index + 1 >= len(tokens):
+                    raise ValueError("审核参数不能为空")
+                moderation = normalize_image_moderation(tokens[token_index + 1])
+                token_index += 2
+                continue
+            if token.startswith("--moderation="):
+                moderation = normalize_image_moderation(token.partition("=")[2])
+                token_index += 1
+                continue
         prompt_tokens.append(token)
         token_index += 1
 
@@ -95,6 +108,7 @@ def parse_command_payload(text: str) -> ParsedCommand:
         size=size,
         quality=quality,
         moderation=moderation,
+        optimize_prompt=optimize_prompt,
     )
 
 
