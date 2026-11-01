@@ -339,15 +339,36 @@ class OpenAIImagePlugin(Star):
             await event.send(event.plain_result(f"参数错误：{exc}"))
             return
 
-        final_prompt = await self._maybe_optimize_command_prompt(
-            parsed_command.prompt,
-            mode="generate",
-            require_aspect_ratio=True,
-            size=parsed_command.size,
-        )
-        final_prompt = self._maybe_apply_local_prompt_prefix(
-            final_prompt, mode="generate"
-        )
+        if parsed_command.count > 1 and bool(
+            self.config.get("enable_command_prompt_optimization", False)
+        ):
+            optimized_prompts = await asyncio.gather(
+                *[
+                    self._maybe_optimize_command_prompt(
+                        parsed_command.prompt,
+                        mode="generate",
+                        require_aspect_ratio=True,
+                        size=parsed_command.size,
+                    )
+                    for _ in range(parsed_command.count)
+                ]
+            )
+            prompts = [
+                self._maybe_apply_local_prompt_prefix(p, mode="generate")
+                for p in optimized_prompts
+            ]
+            final_prompt = prompts[0]
+        else:
+            final_prompt = await self._maybe_optimize_command_prompt(
+                parsed_command.prompt,
+                mode="generate",
+                require_aspect_ratio=True,
+                size=parsed_command.size,
+            )
+            final_prompt = self._maybe_apply_local_prompt_prefix(
+                final_prompt, mode="generate"
+            )
+            prompts = None
 
         active_count = (
             getattr(self._task_service, "active_tasks", 0) + parsed_command.count
@@ -365,6 +386,7 @@ class OpenAIImagePlugin(Star):
             quality=parsed_command.quality,
             moderation=parsed_command.moderation,
             send_user_message=True,
+            prompts=prompts,
         )
 
     async def _handle_edit_command(
@@ -388,13 +410,34 @@ class OpenAIImagePlugin(Star):
                 self._format_log_text(preset_prompt),
             )
             final_prompt = preset_prompt
+            final_prompt = self._maybe_apply_local_prompt_prefix(
+                final_prompt, mode="edit"
+            )
+            prompts = None
+        elif parsed_command.count > 1 and bool(
+            self.config.get("enable_command_prompt_optimization", False)
+        ):
+            optimized_prompts = await asyncio.gather(
+                *[
+                    self._maybe_optimize_command_prompt(
+                        parsed_command.prompt, mode="edit"
+                    )
+                    for _ in range(parsed_command.count)
+                ]
+            )
+            prompts = [
+                self._maybe_apply_local_prompt_prefix(p, mode="edit")
+                for p in optimized_prompts
+            ]
+            final_prompt = prompts[0]
         else:
             final_prompt = await self._maybe_optimize_command_prompt(
                 parsed_command.prompt, mode="edit"
             )
-        final_prompt = self._maybe_apply_local_prompt_prefix(
-            final_prompt, mode="edit"
-        )
+            final_prompt = self._maybe_apply_local_prompt_prefix(
+                final_prompt, mode="edit"
+            )
+            prompts = None
 
         active_count = (
             getattr(self._task_service, "active_tasks", 0) + parsed_command.count
@@ -409,6 +452,7 @@ class OpenAIImagePlugin(Star):
                 quality=parsed_command.quality,
                 moderation=parsed_command.moderation,
                 send_user_message=True,
+                prompts=prompts,
             )
             return
 
@@ -435,6 +479,7 @@ class OpenAIImagePlugin(Star):
             quality=parsed_command.quality,
             moderation=parsed_command.moderation,
             send_user_message=True,
+            prompts=prompts,
         )
 
     async def _handle_qlogo_command(
@@ -458,13 +503,34 @@ class OpenAIImagePlugin(Star):
                 self._format_log_text(preset_prompt),
             )
             final_prompt = preset_prompt
+            final_prompt = self._maybe_apply_local_prompt_prefix(
+                final_prompt, mode="edit"
+            )
+            prompts = None
+        elif parsed_command.count > 1 and bool(
+            self.config.get("enable_command_prompt_optimization", False)
+        ):
+            optimized_prompts = await asyncio.gather(
+                *[
+                    self._maybe_optimize_command_prompt(
+                        parsed_command.prompt, mode="edit"
+                    )
+                    for _ in range(parsed_command.count)
+                ]
+            )
+            prompts = [
+                self._maybe_apply_local_prompt_prefix(p, mode="edit")
+                for p in optimized_prompts
+            ]
+            final_prompt = prompts[0]
         else:
             final_prompt = await self._maybe_optimize_command_prompt(
                 parsed_command.prompt, mode="edit"
             )
-        final_prompt = self._maybe_apply_local_prompt_prefix(
-            final_prompt, mode="edit"
-        )
+            final_prompt = self._maybe_apply_local_prompt_prefix(
+                final_prompt, mode="edit"
+            )
+            prompts = None
 
         qq_id = extract_first_at_target(event)
         if not qq_id:
@@ -490,6 +556,7 @@ class OpenAIImagePlugin(Star):
             quality=parsed_command.quality,
             moderation=parsed_command.moderation,
             send_user_message=True,
+            prompts=prompts,
         )
 
     async def _handle_figure_command(self, event: AstrMessageEvent) -> None:
@@ -555,6 +622,7 @@ class OpenAIImagePlugin(Star):
         moderation: str = "low",
         *,
         send_user_message: bool,
+        prompts: list[str] | None = None,
     ) -> dict[str, Any]:
         """执行文生图公共流程，供命令与函数工具复用。"""
 
@@ -563,6 +631,14 @@ class OpenAIImagePlugin(Star):
         self._ensure_ready()
         target_prompt = self._maybe_apply_local_prompt_prefix(
             prompt, mode="generate"
+        )
+        resolved_prompts = (
+            [
+                self._maybe_apply_local_prompt_prefix(p, mode="generate")
+                for p in prompts
+            ]
+            if prompts
+            else None
         )
 
         logger.info(
@@ -582,6 +658,7 @@ class OpenAIImagePlugin(Star):
             moderation=moderation,
             event=event,
             send_each_result=send_user_message,
+            prompts=resolved_prompts,
         )
         return await self._finalize_results(
             event=event,
@@ -603,6 +680,7 @@ class OpenAIImagePlugin(Star):
         moderation: str = "low",
         *,
         send_user_message: bool,
+        prompts: list[str] | None = None,
     ) -> dict[str, Any]:
         """执行图片编辑公共流程，供命令与函数工具复用。"""
 
@@ -611,6 +689,14 @@ class OpenAIImagePlugin(Star):
         self._ensure_ready()
         target_prompt = self._maybe_apply_local_prompt_prefix(
             prompt, mode="edit"
+        )
+        resolved_prompts = (
+            [
+                self._maybe_apply_local_prompt_prefix(p, mode="edit")
+                for p in prompts
+            ]
+            if prompts
+            else None
         )
 
         image_components = extract_image_components(event)
@@ -671,6 +757,7 @@ class OpenAIImagePlugin(Star):
             data_urls=image_data_urls,
             event=event,
             send_each_result=send_user_message,
+            prompts=resolved_prompts,
         )
         return await self._finalize_results(
             event=event,
@@ -693,6 +780,7 @@ class OpenAIImagePlugin(Star):
         moderation: str = "low",
         *,
         send_user_message: bool,
+        prompts: list[str] | None = None,
     ) -> dict[str, Any]:
         """使用 QQ 头像作为输入图执行图片编辑流程。"""
 
@@ -701,6 +789,14 @@ class OpenAIImagePlugin(Star):
         self._ensure_ready()
         target_prompt = self._maybe_apply_local_prompt_prefix(
             prompt, mode="edit"
+        )
+        resolved_prompts = (
+            [
+                self._maybe_apply_local_prompt_prefix(p, mode="edit")
+                for p in prompts
+            ]
+            if prompts
+            else None
         )
 
         logger.info(
@@ -737,6 +833,7 @@ class OpenAIImagePlugin(Star):
             data_urls=[avatar_data_url],
             event=event,
             send_each_result=send_user_message,
+            prompts=resolved_prompts,
         )
         return await self._finalize_results(
             event=event,
@@ -758,6 +855,7 @@ class OpenAIImagePlugin(Star):
         moderation: str = "low",
         *,
         send_user_message: bool,
+        prompts: list[str] | None = None,
     ) -> dict[str, Any]:
         """使用已保存的机器人形象图作为输入图执行编辑流程。"""
 
@@ -776,6 +874,14 @@ class OpenAIImagePlugin(Star):
 
         target_prompt = self._maybe_apply_local_prompt_prefix(
             prompt, mode="edit"
+        )
+        resolved_prompts = (
+            [
+                self._maybe_apply_local_prompt_prefix(p, mode="edit")
+                for p in prompts
+            ]
+            if prompts
+            else None
         )
         logger.info(
             "[OpenAIImage][figure][task_id=%s] 收到请求 count=%s prompt=%s source=%s",
@@ -809,6 +915,7 @@ class OpenAIImagePlugin(Star):
             data_urls=[figure_data_url],
             event=event,
             send_each_result=send_user_message,
+            prompts=resolved_prompts,
         )
         return await self._finalize_results(
             event=event,
@@ -830,6 +937,7 @@ class OpenAIImagePlugin(Star):
         moderation: str = "low",
         event: AstrMessageEvent | None = None,
         send_each_result: bool = False,
+        prompts: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """执行批量文生图任务。"""
 
@@ -837,11 +945,17 @@ class OpenAIImagePlugin(Star):
         assert self._generate_service is not None
 
         async def _run_one(index: int) -> dict[str, Any]:
+            cur_prompt = (
+                prompts[index - 1]
+                if prompts and len(prompts) >= index
+                else prompt
+            )
+
             async def _execute_generate() -> Path:
                 primary = self._get_active_image_provider()
                 fallback = self._get_fallback_image_provider()
                 primary_prompt = self._maybe_apply_local_prompt_prefix(
-                    prompt, provider=primary, mode="generate"
+                    cur_prompt, provider=primary, mode="generate"
                 )
                 try:
                     return await self._generate_service.generate(
@@ -870,7 +984,7 @@ class OpenAIImagePlugin(Star):
                             cache_store=self._cache_store,
                         )
                         fallback_prompt = self._maybe_apply_local_prompt_prefix(
-                            prompt, provider=fallback, mode="generate"
+                            cur_prompt, provider=fallback, mode="generate"
                         )
                         return await fallback_service.generate(
                             model=fallback.model,
@@ -920,6 +1034,7 @@ class OpenAIImagePlugin(Star):
         moderation: str = "low",
         event: AstrMessageEvent | None = None,
         send_each_result: bool = False,
+        prompts: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """执行批量图生图任务。"""
 
@@ -927,11 +1042,17 @@ class OpenAIImagePlugin(Star):
         assert self._edit_service is not None
 
         async def _run_one(index: int) -> dict[str, Any]:
+            cur_prompt = (
+                prompts[index - 1]
+                if prompts and len(prompts) >= index
+                else prompt
+            )
+
             async def _execute_edit() -> Path:
                 primary = self._get_active_image_provider()
                 fallback = self._get_fallback_image_provider()
                 primary_prompt = self._maybe_apply_local_prompt_prefix(
-                    prompt, provider=primary, mode="edit"
+                    cur_prompt, provider=primary, mode="edit"
                 )
                 try:
                     return await self._edit_service.edit(
@@ -961,7 +1082,7 @@ class OpenAIImagePlugin(Star):
                             cache_store=self._cache_store,
                         )
                         fallback_prompt = self._maybe_apply_local_prompt_prefix(
-                            prompt, provider=fallback, mode="edit"
+                            cur_prompt, provider=fallback, mode="edit"
                         )
                         return await fallback_service.edit(
                             model=fallback.model,

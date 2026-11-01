@@ -1999,3 +1999,170 @@ async def test_llm_tool_generate_image_appends_prefix_for_local_model():
     event.send.assert_awaited_once()
     assert 'prompt="score_9, score_8_up, 1girl, solo"' in event._sent_messages[0]
     assert plugin._execute_generate_flow.await_args.kwargs["prompt"] == "score_9, score_8_up, 1girl, solo"
+
+
+@pytest.mark.asyncio
+async def test_handle_generate_command_multi_count_with_prompt_optimization():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={"enable_command_prompt_optimization": True},
+    )
+    plugin._execute_generate_flow = AsyncMock()
+    event = _make_event(platform_name="other", is_admin=True)
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        side_effect=["optimized prompt 1", "optimized prompt 2", "optimized prompt 3"],
+    ) as mock_opt:
+        await plugin._handle_generate_command(event, raw_prompt="3 一辆红色跑车")
+
+    assert mock_opt.await_count == 3
+    plugin._execute_generate_flow.assert_awaited_once()
+    kwargs = plugin._execute_generate_flow.await_args.kwargs
+    assert kwargs["count"] == 3
+    assert kwargs["prompt"] == "optimized prompt 1"
+    assert kwargs["prompts"] == [
+        "optimized prompt 1",
+        "optimized prompt 2",
+        "optimized prompt 3",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_handle_edit_command_multi_count_with_prompt_optimization():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={"enable_command_prompt_optimization": True},
+    )
+    plugin._execute_edit_flow = AsyncMock()
+    event = _make_event(platform_name="other", is_admin=True)
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        side_effect=["edit prompt 1", "edit prompt 2"],
+    ) as mock_opt:
+        await _collect_asyncgen(
+            plugin._handle_edit_command(event, raw_prompt="2 把背景换成雪山")
+        )
+
+    assert mock_opt.await_count == 2
+    plugin._execute_edit_flow.assert_awaited_once()
+    kwargs = plugin._execute_edit_flow.await_args.kwargs
+    assert kwargs["count"] == 2
+    assert kwargs["prompt"] == "edit prompt 1"
+    assert kwargs["prompts"] == ["edit prompt 1", "edit prompt 2"]
+
+
+@pytest.mark.asyncio
+async def test_handle_qlogo_command_multi_count_with_prompt_optimization():
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={"enable_command_prompt_optimization": True},
+    )
+    plugin._execute_avatar_edit_flow = AsyncMock()
+    event = _make_event(
+        message_components=[SimpleNamespace(type="at", qq="123456")],
+        is_admin=True,
+    )
+
+    with patch.object(
+        module,
+        "optimize_prompt_text",
+        new_callable=AsyncMock,
+        side_effect=["qlogo prompt 1", "qlogo prompt 2"],
+    ) as mock_opt:
+        await plugin._handle_qlogo_command(event, raw_prompt="2 赛博朋克风")
+
+    assert mock_opt.await_count == 2
+    plugin._execute_avatar_edit_flow.assert_awaited_once()
+    kwargs = plugin._execute_avatar_edit_flow.await_args.kwargs
+    assert kwargs["count"] == 2
+    assert kwargs["prompt"] == "qlogo prompt 1"
+    assert kwargs["prompts"] == ["qlogo prompt 1", "qlogo prompt 2"]
+
+
+@pytest.mark.asyncio
+async def test_run_generate_jobs_uses_individual_prompts_when_provided(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "image_providers": [
+                {
+                    "provider_id": "test_provider",
+                    "name": "测试模型",
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key": "sk-test",
+                    "model": "gpt-image-1",
+                    "endpoint_type": "images",
+                }
+            ],
+            "active_provider_id": "test_provider",
+        },
+    )
+    plugin._ensure_ready()
+    plugin._generate_service = MagicMock()
+    img_path = tmp_path / "img.png"
+    img_path.write_bytes(b"fake")
+    plugin._generate_service.generate = AsyncMock(return_value=img_path)
+
+    results = await plugin._run_generate_jobs(
+        task_id="t1",
+        count=2,
+        prompt="fallback_prompt",
+        prompts=["prompt_1", "prompt_2"],
+    )
+
+    assert len(results) == 2
+    calls = plugin._generate_service.generate.await_args_list
+    assert len(calls) == 2
+    assert calls[0].kwargs["prompt"] == "prompt_1"
+    assert calls[1].kwargs["prompt"] == "prompt_2"
+
+
+@pytest.mark.asyncio
+async def test_run_edit_jobs_uses_individual_prompts_when_provided(tmp_path: Path):
+    module = _load_module()
+    plugin = module.OpenAIImagePlugin(
+        context=SimpleNamespace(),
+        config={
+            "image_providers": [
+                {
+                    "provider_id": "test_provider",
+                    "name": "测试模型",
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key": "sk-test",
+                    "model": "gpt-image-1",
+                    "endpoint_type": "images",
+                }
+            ],
+            "active_provider_id": "test_provider",
+        },
+    )
+    plugin._ensure_ready()
+    plugin._edit_service = MagicMock()
+    img_path = tmp_path / "img.png"
+    img_path.write_bytes(b"fake")
+    plugin._edit_service.edit = AsyncMock(return_value=img_path)
+
+    results = await plugin._run_edit_jobs(
+        task_id="t1",
+        count=2,
+        prompt="fallback_prompt",
+        data_urls=["data:image/png;base64,123"],
+        prompts=["edit_1", "edit_2"],
+    )
+
+    assert len(results) == 2
+    calls = plugin._edit_service.edit.await_args_list
+    assert len(calls) == 2
+    assert calls[0].kwargs["prompt"] == "edit_1"
+    assert calls[1].kwargs["prompt"] == "edit_2"
+
