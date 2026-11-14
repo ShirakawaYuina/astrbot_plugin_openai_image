@@ -311,11 +311,11 @@ class OpenAIImagePlugin(Star):
         当用户要求生成、编辑或查看机器人自己、Bot 形象、助手形象、看板娘、
         机器人头像、机器人立绘、机器人表情包等与机器人有关的图像时调用。
         生成时应鼓励图像模型根据提示词调整场景、构图、光影、表情、动作、姿态和服装，避免机器人形象单一化。
-        无论用户使用何种语言，必须将具体的场景环境、构图视角、光影氛围、肢体动作与生动表情等构想翻译并扩写为高质量英文提示词（English prompt only）传入。
+        无论用户使用何种语言，必须将具体的场景环境、构图视角、光影氛围、肢体动作、生动表情以及与场景自然适配的服装搭配等构想翻译并扩写为高质量英文提示词（English prompt only）传入；当用户未明确指定服装时，必须主动搭配合适的、与当前场景/季节/活动相适配的服装（clothing/outfit）。
         工具成功后应以机器人本人看到新形象的自然反应回复，不要描述工具执行过程。
 
         Args:
-            prompt(string): 基于机器人形象参考图进行编辑的高质量英文提示词（English prompt only）。必须对新场景环境（scene/environment）、构图视角（composition）、光影明暗（lighting/shadows）、动作姿态（action/pose）与表情神态（facial expression/emotion）有具体生动的细致描绘，严禁传入中文。
+            prompt(string): 基于机器人形象参考图进行编辑的高质量英文提示词（English prompt only）。必须对新场景环境（scene/environment）、构图视角（composition）、光影明暗（lighting/shadows）、动作姿态（action/pose）、表情神态（facial expression/emotion）以及与场景适配的合适服装（clothing/outfit，若用户未指定则主动搭配与场景贴合的服饰）有具体生动的细致描绘，严禁传入中文。
             count(number): 生成图片数量，默认 1。
             size(string): 可选输出尺寸，例如 auto、1024x1024、portrait。
             quality(string): 可选质量，auto、low、medium、high。

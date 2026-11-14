@@ -1086,6 +1086,8 @@ def test_llm_tool_docstring_declares_args_for_prompt_and_options():
         assert "表情" in doc
 
     assert "机器人形象" in figure_doc
+    assert "服装" in figure_doc
+    assert "clothing" in figure_doc
 
 
 def test_plugin_registers_command_and_tool_names():
