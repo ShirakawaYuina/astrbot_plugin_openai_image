@@ -48,6 +48,15 @@ from .core.web_api import ImageStudioApi, optimize_prompt_text
 PLUGIN_NAME = "astrbot_plugin_openai_image"
 FIGURE_IMAGE_DIR_NAME = "figure"
 FIGURE_IMAGE_FILE_NAME = "robot_figure.png"
+DEFAULT_ROBOT_FIGURE_PROMPT_TEMPLATE = (
+    "请以提供的形象参考图为基础生成新图，保持角色核心身份、脸部识别特征、"
+    "发型/轮廓/主要配色等关键设定一致。"
+    "同时必须根据用户提示词主动设计贴合设定的场景环境、构图视角、光影氛围、表情神态、动作姿态、视线、肢体语言和服装，"
+    "服装可以随主题、职业、季节、活动或情绪变化而变化。"
+    "避免总是生成正脸站立、微笑、静态半身、相同手势或相同服装；"
+    "画面应体现提示词中的场景空间、构图层次、光影氛围、角色情绪和事件，让角色看起来正在自然参与该场景。"
+    "\n\n用户提示词：{prompt}"
+)
 
 
 @register(
@@ -1484,20 +1493,19 @@ class OpenAIImagePlugin(Star):
         base64_data = base64.b64encode(image_bytes).decode("utf-8")
         return f"data:{mime_type};base64,{base64_data}"
 
-    @staticmethod
-    def _build_robot_figure_edit_prompt(prompt: str) -> str:
+    def _build_robot_figure_edit_prompt(self, prompt: str) -> str:
         """构建机器人形象图工具专用提示词，强化场景、构图、光影、表情、动作和服装的多样化。"""
 
         clean_prompt = str(prompt or "").strip()
-        return (
-            "请以提供的形象参考图为基础生成新图，保持角色核心身份、脸部识别特征、"
-            "发型/轮廓/主要配色等关键设定一致。"
-            "同时必须根据用户提示词主动设计贴合设定的场景环境、构图视角、光影氛围、表情神态、动作姿态、视线、肢体语言和服装，"
-            "服装可以随主题、职业、季节、活动或情绪变化而变化。"
-            "避免总是生成正脸站立、微笑、静态半身、相同手势或相同服装；"
-            "画面应体现提示词中的场景空间、构图层次、光影氛围、角色情绪和事件，让角色看起来正在自然参与该场景。"
-            f"\n\n用户提示词：{clean_prompt}"
-        )
+        custom_template = str(
+            self.config.get("robot_figure_prompt_template", "") or ""
+        ).strip()
+        if not custom_template:
+            custom_template = DEFAULT_ROBOT_FIGURE_PROMPT_TEMPLATE
+
+        if "{prompt}" in custom_template:
+            return custom_template.replace("{prompt}", clean_prompt)
+        return f"{custom_template}\n\n用户提示词：{clean_prompt}"
 
     @staticmethod
     def _build_robot_figure_tool_reply(result: dict[str, Any]) -> str:
