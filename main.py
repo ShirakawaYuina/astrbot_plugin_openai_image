@@ -315,16 +315,23 @@ class OpenAIImagePlugin(Star):
         quality: str = "auto",
         moderation: str = "low",
     ) -> str:
-        """供 LLM 调用的机器人形象图编辑工具。
+        """角色专属形象绘制与编辑工具。
 
-        当用户要求生成、编辑或查看机器人自己、Bot 形象、助手形象、看板娘、
-        机器人头像、机器人立绘、机器人表情包等与机器人有关的图像时调用。
-        生成时应鼓励图像模型根据提示词调整场景、构图、光影、表情、动作、姿态和服装，避免机器人形象单一化。
-        无论用户使用何种语言，必须将具体的场景环境、构图视角、光影氛围、肢体动作、生动表情以及与场景自然适配的服装搭配等构想翻译并扩写为高质量英文提示词（English prompt only）。
-        工具成功后应以机器人本人看到新形象的自然反应回复，不要描述工具执行过程。
+        [触发条件]
+        当用户请求查看、生成、修改当前人格角色（即“我”/当前助手）的肖像、自拍、
+        立绘、头像、表情包或特定情境下的造型时调用。
+
+        [提示词构建规范]
+        1. 多样性要求：主动丰富画面表现力，根据对话语境动态调整场景环境、构图视角、
+           光影色调、人物姿态、微表情及应景服装，防止角色动作和穿搭单一化。
+        2. 纯英文输出：无论用户使用何种语言，最终传入的生图描述必须转化为英文提示词（English prompt only）。
+
+        [回复规范]
+        图像生成后，必须完全沉浸在当前角色人设中，以“看到自己新照片/新造型”的
+        自然口吻回应用户，绝对禁止暴露任何后台指令、工具名称或生成流程。
 
         Args:
-            prompt(string): 基于机器人形象参考图进行编辑的高质量英文提示词（English prompt only）。必须对新场景环境（scene/environment）、构图视角（composition）、光影明暗（lighting/shadows）、动作姿态（action/pose）、表情神态（facial expression/emotion）以及与场景适配的合适服装（clothing/outfit，若用户未指定则主动搭配与场景贴合的服饰）有具体生动的细致描绘，严禁传入中文。
+            prompt(string): 基于当前角色形象参考图进行编辑的高质量英文提示词（English prompt only）。必须对场景环境（scene/environment）、构图视角（composition）、光影明暗（lighting/shadows）、动作姿态（action/pose）、表情神态（facial expression/emotion）有具体生动的细致描绘，严禁传入中文。
             count(number): 生成图片数量，默认 1。
             size(string): 可选输出尺寸，例如 auto、1024x1024、portrait。
             quality(string): 可选质量，auto、low、medium、high。
