@@ -20,7 +20,7 @@
 - 提供三个函数工具：
   - `openai_generate_image`
   - `openai_edit_image`
-  - `openai_edit_robot_figure_image`
+  - `openai_edit_persona_figure_image`
 
 ## 命令与参数说明
 
@@ -158,7 +158,7 @@
 
 使用 `/oaifigure` 设置机器人形象图，使用 `/oaishow` 查看当前已设置的形象图。形象图会保存到 `data/plugin_data/astrbot_plugin_openai_image/figure/robot_figure.png`，重复设置会覆盖旧图。
 
-当 LLM 判断用户想生成机器人自己、Bot 形象、助手形象、看板娘、机器人头像/立绘/表情包等相关图像时，可自动调用 `openai_edit_robot_figure_image`，插件会使用已保存的形象图作为参考图执行图片编辑。
+当 LLM 判断用户想生成机器人自己、Bot 形象、助手形象、看板娘、机器人头像/立绘/表情包等相关图像时，可自动调用 `openai_edit_persona_figure_image`，插件会使用已保存的形象图作为参考图执行图片编辑。
 
 ## 图片工作台（WebUI 内置页面）
 

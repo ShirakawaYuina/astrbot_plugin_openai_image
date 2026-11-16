@@ -305,8 +305,8 @@ class OpenAIImagePlugin(Star):
         )
         return str(result["summary"])
 
-    @filter.llm_tool(name="openai_edit_robot_figure_image")
-    async def openai_edit_robot_figure_image_tool(
+    @filter.llm_tool(name="openai_edit_persona_figure_image")
+    async def openai_edit_persona_figure_image_tool(
         self,
         event: AstrMessageEvent,
         prompt: str,
