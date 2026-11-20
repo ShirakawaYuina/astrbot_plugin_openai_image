@@ -158,7 +158,7 @@
 
 使用 `/oaifigure` 设置机器人形象图，使用 `/oaishow` 查看当前已设置的形象图。形象图会保存到 `data/plugin_data/astrbot_plugin_openai_image/figure/robot_figure.png`，重复设置会覆盖旧图。
 
-当 LLM 判断用户想生成机器人自己、Bot 形象、助手形象、看板娘、机器人头像/立绘/表情包等相关图像时，可自动调用 `openai_edit_persona_figure_image`，插件会使用已保存的形象图作为参考图执行图片编辑。
+当 LLM 判断用户想生成机器人自己、Bot 形象、助手形象、看板娘、机器人头像/立绘/表情包等相关图像时，可自动调用 `openai_edit_persona_figure_image`，插件会使用已保存的形象图作为参考图执行图片编辑。若用户在当前对话中附带了图片或回复引用了图片，插件会自动将角色形象图与用户指定的参考图同时输入给生图模型进行融合重绘（如合影、置身指定背景等）。
 
 ## 图片工作台（WebUI 内置页面）
 
